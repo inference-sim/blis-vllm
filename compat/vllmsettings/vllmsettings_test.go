@@ -85,11 +85,13 @@ func TestOfFillsEverySetting(t *testing.T) {
 	populate(t, reflect.ValueOf(&e).Elem(), "Engine")
 	var missing []string
 	zeroes(reflect.ValueOf(Of(e)), "Settings", &missing)
-	// The block has no key for these two settings, so no block states them.
+	// The block has no key for these settings, so no block states them.
 	// TestTheBlockHasNoKeyForAttentionBackendOrDecoderReplay checks that.
+	noKey := map[string]bool{"Settings.AttentionBackend": true, "Settings.CUDAGraphDecoderReplay": true,
+		"Settings.MiniMaxM3MSADecodeBackend": true, "Settings.AttentionBackendPerKind": true, "Settings.LinearBackendPerQuant": true}
 	var unfilled []string
 	for _, m := range missing {
-		if m != "Settings.AttentionBackend" && m != "Settings.CUDAGraphDecoderReplay" {
+		if !noKey[m] {
 			unfilled = append(unfilled, m)
 		}
 	}
@@ -103,7 +105,7 @@ func TestOfFillsEverySetting(t *testing.T) {
 // them is refused by the strict decode, naming the key. So Of has nothing to fill them from, and
 // TestOfFillsEverySetting exempts exactly these two.
 func TestTheBlockHasNoKeyForAttentionBackendOrDecoderReplay(t *testing.T) {
-	for _, key := range []string{"attention_backend", "backend", "cudagraph_decoder_replay"} {
+	for _, key := range []string{"attention_backend", "backend", "cudagraph_decoder_replay", "minimax_m3_msa_decode_backend", "backend_per_kind", "linear_backend_per_quant"} {
 		pool := deployment.Pool{Engine: mustBlock(t, key+": true\n")}
 		if _, err := Decode(pool); err == nil || !strings.Contains(err.Error(), key) {
 			t.Errorf("a block stating %s: Decode returned %v, want a refusal naming the key", key, err)
