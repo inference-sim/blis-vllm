@@ -170,7 +170,10 @@ var noDefaultValue = map[string]string{
 // pricedByTheKernel is the allow-list: keys the latency kernel reads and prices from blis-substrate's
 // enginesettings.Settings, so the engine must accept them. Their status is not_modelled because the
 // kernel prices them with vLLM v0.31.0's policy, not v0.32.0's; the issue is the open one fields.json
-// cites for each. VLM-3 and design 11.2 say a field the engine reads and prices when stated is a
+// cites for each.
+// The exception is the three cudagraph entries, rechecked against v0.32.0 (the note in fields.json):
+// cudagraph_mode is not_modelled because v0.32.0 also changes the mode where the kernel cannot see it,
+// and the capture sizes because the substrate's value classes have no type for a list. VLM-3 and design 11.2 say a field the engine reads and prices when stated is a
 // status to correct, to modelled with evidence or to refused when stated; neither is possible while
 // the policy is v0.31.0's, and refusing would refuse every committed deployment that states them.
 // The test checks each really reaches the kernel's settings (vllmsettings.Of), so an entry cannot
