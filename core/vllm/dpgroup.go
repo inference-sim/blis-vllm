@@ -140,6 +140,10 @@ func (g *DPGroup) publish(now engine.Time) {
 // Add routes the request with the internal load balancer and hands it to that rank; a request
 // arriving at an idle wave starts the next wave on every rank (core.DP.Add).
 func (g *DPGroup) Add(r engine.Request, now engine.Time) error {
+	// A request that cannot exist is refused before the balancer sees it, so it takes no slot.
+	if err := r.Validate(); err != nil {
+		return err
+	}
 	if _, dup := g.rankOf[r.ID]; dup {
 		return fmt.Errorf("vllm: request %s added twice", r.ID)
 	}

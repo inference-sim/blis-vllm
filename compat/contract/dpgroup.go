@@ -117,6 +117,10 @@ func (g *DPGroup) PickRank(now engine.Time, inFlight []int) (int, error) {
 
 // Add routes the request to the rank the balancer picks at now and enqueues it there.
 func (g *DPGroup) Add(r engine.Request, now engine.Time) error {
+	// A request that cannot exist is refused before the balancer picks a rank for it.
+	if err := r.Validate(); err != nil {
+		return err
+	}
 	return g.AddToRank(g.lb.Pick(g.lbView, now), r, now)
 }
 
@@ -124,6 +128,9 @@ func (g *DPGroup) Add(r engine.Request, now engine.Time) error {
 // external DP load balancer, every rank its own endpoint). A rank left with work waiting asks
 // the group for a step (the host loop's QueuedEvent).
 func (g *DPGroup) AddToRank(k int, r engine.Request, now engine.Time) error {
+	if err := r.Validate(); err != nil {
+		return err
+	}
 	if k < 0 || k >= len(g.ranks) {
 		return fmt.Errorf("contract: no rank %d in a group of %d", k, len(g.ranks))
 	}

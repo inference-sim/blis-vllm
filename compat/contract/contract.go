@@ -119,6 +119,9 @@ var _ engine.Engine = (*Engine)(nil)
 // Add enqueues a request, as the host's QueuedEvent does (EnqueueRequest). A request the engine
 // drops at enqueue (its length guards) is refused.
 func (e *Engine) Add(r engine.Request, now engine.Time) error {
+	if err := r.Validate(); err != nil {
+		return err
+	}
 	if _, dup := e.reqs[r.ID]; dup {
 		return fmt.Errorf("contract: request %s added twice", r.ID)
 	}
