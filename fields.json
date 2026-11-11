@@ -7301,7 +7301,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#55"
+        "issue": "inference-sim/blis-vllm#108"
       },
       "estimation": {
         "rule": "none"
@@ -7312,7 +7312,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#55"
+        "issue": "inference-sim/blis-vllm#108"
       },
       "estimation": {
         "rule": "none"
@@ -7323,7 +7323,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#55"
+        "issue": "inference-sim/blis-vllm#108"
       },
       "estimation": {
         "rule": "none"
@@ -7334,7 +7334,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#55"
+        "issue": "inference-sim/blis-vllm#108"
       },
       "estimation": {
         "rule": "none"
@@ -7345,7 +7345,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#76"
+        "issue": "inference-sim/blis-vllm#108"
       },
       "estimation": {
         "rule": "none"
@@ -7356,7 +7356,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#55"
+        "issue": "inference-sim/blis-vllm#108"
       },
       "estimation": {
         "rule": "none"
@@ -7367,7 +7367,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#76"
+        "issue": "inference-sim/blis-vllm#108"
       },
       "estimation": {
         "rule": "none"
@@ -7378,7 +7378,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#55"
+        "issue": "inference-sim/blis-vllm#108"
       },
       "estimation": {
         "rule": "none"
@@ -7389,7 +7389,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#76"
+        "issue": "inference-sim/blis-vllm#108"
       },
       "estimation": {
         "rule": "none"
@@ -9432,7 +9432,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#7"
+        "issue": "inference-sim/blis-vllm#109"
       },
       "estimation": {
         "rule": "none"
