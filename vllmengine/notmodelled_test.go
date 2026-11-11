@@ -564,12 +564,12 @@ func TestTheKernelDecidesUseTRTLLMAttention(t *testing.T) {
 		_, err = engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots})
 		return err
 	}
-	if err := build(t, "b200", "use_trtllm_attention: true\n"); err != nil {
+	if err := build(t, "b200", "attention_config: {use_trtllm_attention: true}\n"); err != nil {
 		t.Errorf("true on b200: %v, want the kernel to price it", err)
 	}
 	for _, c := range []struct{ chip, line, want string }{
-		{"h200", "use_trtllm_attention: true\n", "no prefill measurement of the trtllm-gen kernel"},
-		{"b200", "use_trtllm_attention: false\n", "no measurement that prices it"},
+		{"h200", "attention_config: {use_trtllm_attention: true}\n", "no prefill measurement of the trtllm-gen kernel"},
+		{"b200", "attention_config: {use_trtllm_attention: false}\n", "no measurement that prices it"},
 	} {
 		err := build(t, c.chip, c.line)
 		if err == nil || !strings.Contains(err.Error(), "attention_config.use_trtllm_attention") || !strings.Contains(err.Error(), c.want) {
