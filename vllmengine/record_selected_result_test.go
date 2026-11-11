@@ -21,7 +21,7 @@ func TestARunPricingTheTRTLLMLaneOnB200ProducesValidSelectedEntries(t *testing.T
 		extra     string
 		needsLane bool
 	}{
-		"use_trtllm_attention true": {"use_trtllm_attention: true\n", true},
+		"use_trtllm_attention true": {"attention_config: {use_trtllm_attention: true}\n", true},
 		"nothing stated on b200":    {"", false},
 	} {
 		t.Run(name, func(t *testing.T) {
