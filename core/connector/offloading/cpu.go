@@ -7,6 +7,7 @@
 package offloading
 
 import (
+	"container/list"
 	"fmt"
 	"sort"
 )
@@ -281,10 +282,13 @@ type lruPolicy struct {
 	ranks     map[Key]int
 	evictable map[Key]bool
 	next      int
+	order     *list.List
+	elems     map[Key]*list.Element
 }
 
 func newLRU() *lruPolicy {
-	return &lruPolicy{chunks: map[Key]*chunk{}, ranks: map[Key]int{}, evictable: map[Key]bool{}}
+	return &lruPolicy{chunks: map[Key]*chunk{}, ranks: map[Key]int{}, evictable: map[Key]bool{},
+		order: list.New(), elems: map[Key]*list.Element{}}
 }
 
 // insert is insert (lru.py:559-566).
@@ -292,6 +296,11 @@ func (p *lruPolicy) insert(k Key, c *chunk) {
 	p.chunks[k] = c
 	p.next++
 	p.ranks[k] = p.next
+	if element, ok := p.elems[k]; ok {
+		p.order.MoveToBack(element)
+	} else {
+		p.elems[k] = p.order.PushBack(k)
+	}
 	if c.refCnt == 0 {
 		p.evictable[k] = true
 	}
@@ -303,6 +312,7 @@ func (p *lruPolicy) touch(keys []Key) {
 		if _, ok := p.chunks[k]; ok {
 			p.next++
 			p.ranks[k] = p.next
+			p.order.MoveToBack(p.elems[k])
 		}
 	}
 }
@@ -313,22 +323,24 @@ func (p *lruPolicy) evict(n int, protected map[Key]bool) []*chunk {
 	if n == 0 {
 		return []*chunk{}
 	}
-	cands := make([]Key, 0, len(p.evictable))
-	for k := range p.evictable {
-		if !protected[k] {
-			cands = append(cands, k)
+	picked := make([]Key, 0, n)
+	for element := p.order.Front(); element != nil && len(picked) < n; element = element.Next() {
+		key := element.Value.(Key)
+		if p.evictable[key] && !protected[key] {
+			picked = append(picked, key)
 		}
 	}
-	if len(cands) < n {
+	if len(picked) < n {
 		return nil
 	}
-	sort.Slice(cands, func(i, j int) bool { return p.ranks[cands[i]] < p.ranks[cands[j]] })
 	out := make([]*chunk, n)
-	for i, k := range cands[:n] {
+	for i, k := range picked {
 		out[i] = p.chunks[k]
 		delete(p.evictable, k)
 		delete(p.chunks, k)
 		delete(p.ranks, k)
+		p.order.Remove(p.elems[k])
+		delete(p.elems, k)
 	}
 	return out
 }

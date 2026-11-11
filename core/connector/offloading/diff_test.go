@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -16,6 +17,103 @@ import (
 	"github.com/inference-sim/blis-vllm/core/kv"
 	"github.com/inference-sim/blis-vllm/core/sched"
 )
+
+func sortEvictionKeys(policy *lruPolicy, count int, protected map[Key]bool) []Key {
+	keys := make([]Key, 0, len(policy.evictable))
+	for key := range policy.evictable {
+		if !protected[key] {
+			keys = append(keys, key)
+		}
+	}
+	if len(keys) < count {
+		return nil
+	}
+	sort.Slice(keys, func(left, right int) bool { return policy.ranks[keys[left]] < policy.ranks[keys[right]] })
+	return keys[:count]
+}
+
+func TestLRUFastEvictMatchesSort(test *testing.T) {
+	for seed := int64(0); seed < 300; seed++ {
+		random := rand.New(rand.NewSource(seed))
+		policy := newLRU()
+		var keys []Key
+		for step := 0; step < 2000; step++ {
+			switch operation := random.Intn(6); {
+			case operation == 0 || len(keys) == 0:
+				key := Key(fmt.Sprintf("key%d", random.Intn(400)))
+				if _, exists := policy.chunks[key]; !exists {
+					policy.insert(key, &chunk{refCnt: random.Intn(2)})
+					keys = append(keys, key)
+				}
+			case operation == 1:
+				var touched []Key
+				for index := 0; index < 1+random.Intn(5); index++ {
+					touched = append(touched, keys[random.Intn(len(keys))])
+				}
+				policy.touch(touched)
+			case operation == 2:
+				policy.markEvictable(keys[random.Intn(len(keys))])
+			case operation == 3:
+				policy.markNonEvictable(keys[random.Intn(len(keys))])
+			default:
+				count := random.Intn(6)
+				protected := map[Key]bool{}
+				for index := 0; index < random.Intn(4); index++ {
+					protected[keys[random.Intn(len(keys))]] = true
+				}
+				wanted := sortEvictionKeys(policy, count, protected)
+				wantedChunks := make([]*chunk, len(wanted))
+				for index, key := range wanted {
+					wantedChunks[index] = policy.chunks[key]
+				}
+				before := policy.inRankOrder()
+				got := policy.evict(count, protected)
+				if (wanted == nil) != (got == nil) || len(wanted) != len(got) {
+					test.Fatalf("seed %d step %d: want %v got %d chunks", seed, step, wanted, len(got))
+				}
+				if wanted == nil && !reflect.DeepEqual(before, policy.inRankOrder()) {
+					test.Fatalf("seed %d step %d: failed eviction changed state", seed, step)
+				}
+				for index := range got {
+					if got[index] != wantedChunks[index] {
+						test.Fatalf("seed %d step %d: eviction %d differs from sorted order", seed, step, index)
+					}
+				}
+				keys = keys[:0]
+				for key := range policy.chunks {
+					keys = append(keys, key)
+				}
+				sort.Slice(keys, func(left, right int) bool { return keys[left] < keys[right] })
+			}
+			if policy.order.Len() != len(policy.chunks) || len(policy.elems) != len(policy.chunks) {
+				test.Fatalf("seed %d step %d: list/index length differs from live chunks", seed, step)
+			}
+			ordered := policy.inRankOrder()
+			index := 0
+			for element := policy.order.Front(); element != nil; element = element.Next() {
+				key := element.Value.(Key)
+				if key != ordered[index] || policy.elems[key] != element {
+					test.Fatalf("seed %d step %d: recency index differs at %d", seed, step, index)
+				}
+				index++
+			}
+		}
+	}
+}
+
+func TestLRUReplacementInsertKeepsOneIndexEntry(test *testing.T) {
+	policy := newLRU()
+	policy.insert("first", &chunk{})
+	policy.insert("second", &chunk{})
+	replacement := &chunk{id: 7}
+	policy.insert("first", replacement)
+	if policy.order.Len() != 2 || len(policy.elems) != 2 {
+		test.Fatal("replacement inserted a duplicate index entry")
+	}
+	if got := policy.evict(2, nil); len(got) != 2 || got[1] != replacement {
+		test.Fatalf("replacement lost recency: %v", got)
+	}
+}
 
 // eosToken is tests/v1/core/utils.py:43@5df63a72, which the GPU mock samples last.
 const eosToken = 50256
