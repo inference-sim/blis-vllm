@@ -120,6 +120,12 @@ func newDPGroup(st settings, pricer Pricer) (*DPGroup, error) {
 		}
 		rank := i
 		e.queued = func(id string) bool { return g.inFlight(rank, id) }
+		if e.pd != nil {
+			// Each rank is its own engine core with its own connector (vLLM gives each its own
+			// engine_id and side-channel port, nixl/base_scheduler.py:76-80@5df63a72), so each states
+			// its own transfers. The group tells them apart by ID alone (TransferDone).
+			e.pd.stride, e.pd.lane = n, i
+		}
 		g.ranks = append(g.ranks, &rankState{e: e})
 		g.dp.Ranks = append(g.dp.Ranks, e.core)
 		g.dp.Waves = append(g.dp.Waves, &core.Wave{PrefillScheduleInterval: st.dp.prefillInterval,
@@ -203,6 +209,10 @@ func (g *DPGroup) Schedule(now engine.Time) (engine.Batch, error) {
 				it.rank[i] = cb
 			}
 			it.batch.Preempted = append(it.batch.Preempted, rb.Preempted...)
+			// The pulls this rank's schedule began, in rank order, whether or not it ran tokens: a
+			// decode rank admits a remote prefill into WAITING_FOR_REMOTE_KVS in a schedule that
+			// runs none.
+			it.batch.TransfersStarted = append(it.batch.TransfersStarted, rb.TransfersStarted...)
 		}
 		if !st.Block {
 			continue
@@ -214,6 +224,12 @@ func (g *DPGroup) Schedule(now engine.Time) (engine.Batch, error) {
 		res := e.core.StepEnd(st.Step)
 		steps[i].Step = res
 		e.finishStep(*res.Processed, nil, nil, res.Finished, now)
+		// A request this step ended without running it (a failed pull under kv_load_failure_policy
+		// "fail") finishes in the iteration's batch, as Engine.Schedule reports it.
+		e.emptyFinished = append(e.emptyFinished, res.Finished...)
+		fins := e.takeEmptyFinished()
+		it.batch.Finished = append(it.batch.Finished, fins...)
+		g.retire(fins)
 	}
 	if !it.batch.Empty() {
 		g.nextID++
@@ -351,22 +367,23 @@ func (g *DPGroup) Complete(id engine.BatchID, outcome engine.Outcome, end engine
 		res.FirstTokens = append(res.FirstTokens, rr.FirstTokens...)
 		res.Finished = append(res.Finished, rr.Finished...)
 		res.KVEvents = append(res.KVEvents, rr.KVEvents...)
+		// A rank's block IDs are its own pool's, so two ranks hold a block of the same ID. The
+		// contract lets the host count distinct blocks across handoffs: give each rank's IDs a
+		// range of their own.
+		for _, h := range rr.Handoffs {
+			off := int64(i) * int64(e.s.KV.Pool.NumBlocks())
+			for k := range h.Blocks {
+				h.Blocks[k] += off
+			}
+			res.Handoffs = append(res.Handoffs, h)
+		}
 	}
 	if g.open != nil && !slices.Contains(g.open.waits, true) {
 		steps := g.open.steps
 		g.open = nil
 		g.endStep(steps)
 	}
-	for _, f := range res.Finished {
-		g.dp.LB.Finished(f.ID)
-		if r := g.rankOf[f.ID]; g.inFlight(r, f.ID) {
-			// A later iteration in flight still names it: its rank entry stays, and its ID is
-			// refused, until that iteration completes, as an aborted request's does.
-			g.abortedOn[f.ID] = r
-		} else {
-			delete(g.rankOf, f.ID)
-		}
-	}
+	g.retire(res.Finished)
 	for id, r := range g.abortedOn {
 		if !g.inFlight(r, id) {
 			delete(g.rankOf, id)
@@ -378,9 +395,28 @@ func (g *DPGroup) Complete(id engine.BatchID, outcome engine.Outcome, end engine
 	return res, nil
 }
 
-// TransferDone implements engine.Engine: the group starts no transfers.
-func (g *DPGroup) TransferDone(engine.TransferID, bool, engine.Time) error {
-	return engine.ErrUnknownTransfer
+// retire takes finished requests off the balancer and the group's rank map. A later iteration in
+// flight may still name one: its rank entry stays, and its ID is refused, until that iteration
+// completes, as an aborted request's does.
+func (g *DPGroup) retire(fins []engine.Finished) {
+	for _, f := range fins {
+		g.dp.LB.Finished(f.ID)
+		if r := g.rankOf[f.ID]; g.inFlight(r, f.ID) {
+			g.abortedOn[f.ID] = r
+		} else {
+			delete(g.rankOf, f.ID)
+		}
+	}
+}
+
+// TransferDone implements engine.Engine: the end of a transfer one of the ranks started. Each rank
+// numbers its transfers so that the ID names it (pd.newID), and the rank's connector reports the
+// outcome with its next applied output, as that rank's worker does. An ID no rank issued is unknown.
+func (g *DPGroup) TransferDone(id engine.TransferID, ok bool, now engine.Time) error {
+	if id == 0 {
+		return engine.ErrUnknownTransfer
+	}
+	return g.ranks[int((id-1)%engine.TransferID(len(g.ranks)))].e.TransferDone(id, ok, now)
 }
 
 // Finish ends a request on its rank.
