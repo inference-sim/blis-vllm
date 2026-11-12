@@ -7,14 +7,17 @@
 package engine
 
 // queuedAt is when a request arriving at t enters the wait queue: after its admission overhead
-// (render + tokenize), which runs on the endpoint's render stage when one is configured, so it
-// queues behind earlier requests (INV-R1).
+// (render + tokenize). Only the model's RenderTime holds a render thread of the endpoint's
+// render stage, so it queues behind earlier requests there (INV-R1); the rest of the admission
+// overhead is a delay after the thread is free. With no render stage the whole overhead is one
+// delay.
 func (sim *EngineCore) QueuedAt(req *Request, t int64) int64 {
-	render := sim.latencyModel.QueueingTime(req)
-	if sim.renderer != nil {
-		return sim.renderer.Admit(t, render)
+	total := sim.latencyModel.QueueingTime(req)
+	if sim.renderer == nil {
+		return t + total
 	}
-	return t + render
+	render := min(sim.latencyModel.RenderTime(req), total)
+	return sim.renderer.Admit(t, render) + (total - render)
 }
 
 // hasWaiting reports whether the wait queue holds a request.

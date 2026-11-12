@@ -796,6 +796,14 @@ func (m *Model) QueueingTime(req *sim.Request) int64 {
 	return ticks(m.k.AdmissionOverhead(int(req.InputLen())))
 }
 
+// RenderTime is the part of QueueingTime that holds a render thread: the tokenizer's work,
+// which scales with the prompt (vLLM runs it on the renderer's thread pool,
+// vllm/renderers/base.py:139-158 at v0.32.0). The kernel's per-request admission term is a
+// latency that holds no thread, so a request queues for a thread without it.
+func (m *Model) RenderTime(req *sim.Request) int64 {
+	return ticks(m.k.AdmissionRenderTime(int(req.InputLen())))
+}
+
 // OutputTokenProcessingTime is per-emitted-token host work: incremental detokenization
 // and streaming.
 func (m *Model) OutputTokenProcessingTime() int64 { return m.outputTokenTicks }

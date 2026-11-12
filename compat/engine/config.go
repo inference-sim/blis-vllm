@@ -619,7 +619,7 @@ type SimConfig struct {
 	SpeculativeConfig
 
 	// Frontend is the API-server render stage (INV-R1). Its zero value is inert: a request's
-	// admission overhead (LatencyModel.QueueingTime) is then an uncontended per-request delay.
+	// admission overhead (LatencyModel.QueueingTime) is then an uncontended delay.
 	Frontend FrontendConfig
 
 	// SLO priority overrides for preemption victim selection (--preemption-policy priority).

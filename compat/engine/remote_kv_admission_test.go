@@ -28,6 +28,7 @@ type fixedLatency struct{}
 
 func (fixedLatency) StepTime([]*engine.Request) int64   { return 1000 }
 func (fixedLatency) QueueingTime(*engine.Request) int64 { return 0 }
+func (fixedLatency) RenderTime(*engine.Request) int64   { return 0 }
 func (fixedLatency) OutputTokenProcessingTime() int64   { return 0 }
 func (fixedLatency) PostDecodeFixedOverhead() int64     { return 0 }
 

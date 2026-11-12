@@ -23,6 +23,7 @@ func (tokenLatency) StepTime(batch []*cengine.Request) int64 {
 	return 100 + n
 }
 func (tokenLatency) QueueingTime(*cengine.Request) int64 { return 0 }
+func (tokenLatency) RenderTime(*cengine.Request) int64   { return 0 }
 func (tokenLatency) OutputTokenProcessingTime() int64    { return 0 }
 func (tokenLatency) PostDecodeFixedOverhead() int64      { return 0 }
 

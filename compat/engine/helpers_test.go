@@ -11,6 +11,7 @@ type fixedStepModel struct {
 
 func (m *fixedStepModel) StepTime(batch []*Request) int64  { return m.stepTime }
 func (m *fixedStepModel) QueueingTime(req *Request) int64  { return 0 }
+func (m *fixedStepModel) RenderTime(req *Request) int64    { return 0 }
 func (m *fixedStepModel) OutputTokenProcessingTime() int64 { return 0 }
 func (m *fixedStepModel) PostDecodeFixedOverhead() int64   { return 0 }
 

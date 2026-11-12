@@ -16,6 +16,14 @@ type LatencyModel interface {
 	// QueueingTime estimates the arrival-to-queue delay for a request.
 	QueueingTime(req *Request) int64
 
+	// RenderTime is the part of QueueingTime during which a request holds one render
+	// thread of the API server: the tokenizer, which scales with the prompt. It is at
+	// most QueueingTime. A request queues for a render thread for this long only; the
+	// rest of QueueingTime, a latency that holds no thread, is waited out after the
+	// thread is free. A model whose admission cost is all thread work returns
+	// QueueingTime.
+	RenderTime(req *Request) int64
+
 	// OutputTokenProcessingTime estimates per-token post-processing time.
 	OutputTokenProcessingTime() int64
 

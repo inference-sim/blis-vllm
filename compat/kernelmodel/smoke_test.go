@@ -367,3 +367,24 @@ func TestAPrefixHitIsNotSubtractedTwice(t *testing.T) {
 			"the field's sign is not what this test assumed", warm, twice)
 	}
 }
+
+// A request holds a render thread for the kernel's render time, which is a part of its
+// admission overhead and not the whole: the per-request term is a delay that holds no thread.
+func TestRenderTimeIsThePartOfAdmissionThatHoldsAThread(t *testing.T) {
+	m := open(t, "glm-5-h200-fp8-sglang-tp8.yaml")
+	req := decodeReq(1024, 1024)
+	render, total := m.RenderTime(req), m.QueueingTime(req)
+	if want := m.Kernel().AdmissionRenderTime(1024).Microseconds(); render != want {
+		t.Errorf("RenderTime %d ticks, the kernel says %d", render, want)
+	}
+	if want := m.Kernel().AdmissionOverhead(1024).Microseconds(); total != want {
+		t.Errorf("QueueingTime %d ticks, the kernel says %d", total, want)
+	}
+	if render > total {
+		t.Errorf("render time %d exceeds the admission overhead %d", render, total)
+	}
+	if render == total {
+		t.Errorf("the whole admission overhead (%d ticks) holds a thread, so a fixed per-request "+
+			"term would cap the endpoint's request rate", total)
+	}
+}
