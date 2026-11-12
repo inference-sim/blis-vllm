@@ -15,8 +15,8 @@ imports CUDA wheels, so, as oracle/lower/extract.py does, this parses it with `a
 statements out as written and runs them unmodified in a namespace that holds only what they read:
 the real CacheConfig and platform, and two stand-ins for the VllmConfig fields they read
 (use_v2_model_runner, which the CPU wheel cannot select; parallel_config.prefill_context_parallel_size).
-Nothing is rewritten. The resolved value is then handed to oracle/run_scheduler.py, which runs
-vLLM's Scheduler on the layers it builds, and the real SlidingWindowMLASpec reports
+Nothing is rewritten. The resolved value is then written into the scenario's sliding-window runs
+and handed to oracle/run_scheduler.py, which runs vLLM's Scheduler on the layers it builds, and the real SlidingWindowMLASpec reports
 prefix_cacheable and prefix_replay_tokens, which the trace records under "swa_layout".
 
 Usage: python -I oracle/run_swa_layout.py <vllm checkout> <scenario.json | dir> [out dir]
@@ -26,6 +26,7 @@ import copy
 import json
 import os
 import sys
+import tempfile
 import types
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -118,22 +119,21 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
     resolved = swa["resolved_bounded_replay"]
     swa["sliding_window_runs"] = layout_of(resolved, cfg)
 
-    # run_scheduler builds every layer through layer_specs; the sliding-window MLA runs get the
-    # bounded_replay vLLM resolved. Nothing else of the runner changes.
-    original = run_scheduler.layer_specs
-
-    def layer_specs(c: dict) -> dict:
-        c = copy.deepcopy(c)
-        for r in c["kv_layers"]:
-            if r["spec"] == "sliding_window_mla":
-                r["bounded_replay"] = resolved
-        return original(c)
-
-    run_scheduler.layer_specs = layer_specs
-    try:
-        trace = run_scheduler.run_one(vllm_root, scenario_path)
-    finally:
-        run_scheduler.layer_specs = original
+    # oracle/run_scheduler.py runs the scenario it is given. Its input here is the scenario with the
+    # sliding-window MLA runs stating the bounded_replay vLLM resolved, written to a temporary
+    # file; nothing in the runner or in vLLM is patched. The trace's provenance is then recomputed
+    # for the committed scenario, the file the golden stands for.
+    with open(scenario_path) as f:
+        sc = json.load(f)
+    for r in sc["config"]["kv_layers"]:
+        if r["spec"] == "sliding_window_mla":
+            r["bounded_replay"] = resolved
+    with tempfile.TemporaryDirectory() as tmp:
+        resolved_path = os.path.join(tmp, os.path.basename(scenario_path))
+        with open(resolved_path, "w") as f:
+            json.dump(sc, f)
+        trace = run_scheduler.run_one(vllm_root, resolved_path)
+    trace["provenance"] = run_scheduler.provenance(vllm_root, scenario_path)
     trace["swa_layout"] = swa
     return trace
 
