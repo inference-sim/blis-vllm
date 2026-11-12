@@ -67,7 +67,10 @@ jobs:
           if [ -z "${BASE:-}" ] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then BASE=HEAD~1; fi
           mb="$(git merge-base "$BASE" HEAD)"
           pkgs=""
-          for d in $(git diff --name-only --diff-filter=d "$mb" HEAD -- '*.go' | xargs -r -n1 dirname | sort -u); do
+          # A directory whose name starts with "_" or "." is not a package of this module (go skips it in ./...):
+          # kerneltests/_inpackage holds the kernel's in-package tests, which compile inside blis-substrate's
+          # kernel package and import its internal packages, so they run there, not here.
+          for d in $(git diff --name-only --diff-filter=d "$mb" HEAD -- '*.go' | xargs -r -n1 dirname | sort -u | grep -Ev '(^|/)[_.]' || true); do
             if p="$(go list -e -f '{{if or .GoFiles .TestGoFiles .XTestGoFiles}}{{.ImportPath}}{{end}}' "./$d" 2>/dev/null)" && [ -n "$p" ]; then pkgs="$pkgs ./$d"; fi
           done
           if [ -z "$pkgs" ]; then echo "no Go package changed"; exit 0; fi
