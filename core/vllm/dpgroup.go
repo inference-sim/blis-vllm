@@ -111,7 +111,11 @@ func newDPGroup(st settings, pricer Pricer) (*DPGroup, error) {
 		// Each rank is a replica of tensor x pipeline workers, which fill the pool's nodes in order.
 		rst := st
 		if st.placement != nil {
-			pl := st.placement.ForRank(i, max(st.placement.Tensor, 1)*max(st.placement.Pipeline, 1))
+			if need := st.placement.GroupNodes(n, rankWidth(*st.placement)); st.placement.Node+need > max(st.placement.Nodes, 1) {
+				return nil, fmt.Errorf("vllm: a group of %d data-parallel ranks fills %d node(s) from node %d, and the pool has %d",
+					n, need, st.placement.Node, max(st.placement.Nodes, 1))
+			}
+			pl := st.placement.ReplicaAt(i, rankWidth(*st.placement))
 			rst.placement = &pl
 		}
 		e, err := newEngine(rst, pricer)
@@ -506,14 +510,28 @@ func (g *DPGroup) Plan() plan.PoolPlan { return g.ranks[0].e.Plan() }
 
 var _ engine.Planned = (*DPGroup)(nil)
 
-// SetPlacement states where the group sits: each rank is the replica of tensor x pipeline workers that fills the
-// nodes after the ranks before it, so a rank's node follows from the pool's placement (placement.Placeable).
+// rankWidth is the workers of one data-parallel rank, tensor x pipeline.
+func rankWidth(p placement.Placement) int { return max(p.Tensor, 1) * max(p.Pipeline, 1) }
+
+// SetPlacement states where the group sits: p.Node is the node of its first rank, and each rank is the replica
+// of tensor x pipeline workers that fills the nodes after the ranks before it (placement.Placeable). A
+// placement the pool cannot hold, or any rank having started a transfer, is refused and leaves every rank as it was.
 func (g *DPGroup) SetPlacement(p placement.Placement) error {
 	if err := p.Validate(); err != nil {
 		return fmt.Errorf("vllm: placement: %w", err)
 	}
+	per := make([]placement.Placement, len(g.ranks))
 	for i, r := range g.ranks {
-		if err := r.e.SetPlacement(p.ForRank(i, max(p.Tensor, 1)*max(p.Pipeline, 1))); err != nil {
+		per[i] = p.ReplicaAt(i, rankWidth(p))
+		if err := per[i].Validate(); err != nil {
+			return fmt.Errorf("vllm: placement of rank %d: %w", i, err)
+		}
+		if r.e.startedTransfers() {
+			return fmt.Errorf("vllm: placement: rank %d has started transfers against its old place", i)
+		}
+	}
+	for i, r := range g.ranks {
+		if err := r.e.SetPlacement(per[i]); err != nil {
 			return err
 		}
 	}
@@ -523,8 +541,9 @@ func (g *DPGroup) SetPlacement(p placement.Placement) error {
 var _ placement.Placeable = (*DPGroup)(nil)
 
 // PlaceAt implements engine.Placeable for the group: it is the pool's placement with its first node and rack
-// given, and each rank then sits where the pool's layout puts it (SetPlacement). A group whose ranks
-// fill the pool's nodes starts at the first node, so any other node is refused.
+// given, and each rank then sits where the pool's layout puts it (SetPlacement). A pool of several nodes holds
+// several groups (a pod each), and the host gives each its first node; one that would run past the pool's
+// last node is refused.
 func (g *DPGroup) PlaceAt(at plan.Endpoint) error {
 	first := g.ranks[0].e
 	if first.plan.Hardware == "" {
@@ -534,8 +553,8 @@ func (g *DPGroup) PlaceAt(at plan.Endpoint) error {
 		return nil
 	}
 	base := first.placementOf()
-	if base.RanksPerNode > 0 && at.Node != 0 {
-		return fmt.Errorf("vllm: the group's ranks fill the pool's nodes from the first, so it cannot start at node %d", at.Node)
+	if need := base.GroupNodes(len(g.ranks), rankWidth(base)); at.Node+need > max(base.Nodes, 1) {
+		return fmt.Errorf("vllm: the group fills %d node(s), so it cannot start at node %d of a pool of %d", need, at.Node, max(base.Nodes, 1))
 	}
 	return g.SetPlacement(base.At(at.Node, at.Rack))
 }

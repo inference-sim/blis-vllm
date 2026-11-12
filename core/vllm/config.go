@@ -433,6 +433,18 @@ func resolve(c Config) (settings, error) {
 		return settings{}, fmt.Errorf("vllm: kv_offload with data parallelism (dp %d) is not built yet: the "+
 			"data-parallel group does not carry an offload connector's jobs (%s)", c.DataParallelSize, "https://github.com/inference-sim/blis-vllm/issues/47")
 	}
+	if s.connector != nil && s.connector.Role.producer() && c.DataParallelSize > 1 && c.Placement != nil {
+		// A decode rank pulls from the prefill rank that computed the request (its own engine_id and
+		// side-channel port, nixl/base_scheduler.py:76-80@5df63a72), and the host tells it only the
+		// prefill instance's node (engine.Request.Peer; engine.Handoff carries no endpoint). Ranks of
+		// one group on different nodes would all be stated as the group's first node, so the pull would
+		// be priced on the wrong links.
+		if n := c.Placement.GroupNodes(c.DataParallelSize, rankWidth(*c.Placement)); n > 1 {
+			return settings{}, fmt.Errorf("vllm: a %s group of %d data-parallel ranks spans %d nodes: a handoff states "+
+				"the prefill instance's node, not the node of the rank that holds the KV, so its pull could not be priced "+
+				"on the right links; keep a prefill group on one node", c.KVTransfer.Role, c.DataParallelSize, n)
+		}
+	}
 	s.dp = dpSettings{ranks: max(c.DataParallelSize, 1), syncInterval: e.DPSyncInterval,
 		prefillInterval: max(e.PrefillScheduleInterval, 1), statsIntervalUs: c.DPStatsIntervalUs}
 	if s.dp.syncInterval == 0 {
