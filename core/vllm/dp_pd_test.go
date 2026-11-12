@@ -511,3 +511,15 @@ func TestSeveralDataParallelGroupsShareAPool(t *testing.T) {
 		t.Errorf("a two-node group at node 0: %v", err)
 	}
 }
+
+// A pull that fails under the default policy ends its request in error even when the request's rank has nothing
+// else to run: the rank's step runs no tokens, and the finish rides the schedule that applied the failure.
+func TestAFailedPullOnAnOtherwiseIdleRankEndsItsRequest(t *testing.T) {
+	for _, extra := range []string{consumer + dpPool(2, 8, 1), consumer + dpPool(2, 8, 1) + dpAsync} {
+		tr := enginetest.TestEngine(t, build(t, extra), []enginetest.Arrival{{At: 0, Req: pullOf("only", 40, 4, 0)}},
+			enginetest.Options{TransferFails: func(engine.Transfer) bool { return true }})
+		if f, ok := tr.Finished["only"]; !ok || f.Reason != engine.FinishError {
+			t.Errorf("a failed pull finished %+v (%t), want an error finish", f, ok)
+		}
+	}
+}
