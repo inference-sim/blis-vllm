@@ -1,0 +1,24 @@
+{
+ "about": "When an unset field stands in exactly for a value a run recorded (design 11.2, Estimate). Each entry is the estimation block's `preserves` and `valid_when` as the field list will carry them once blis-substrate's estimation schema allows the two keys; fields/stand_in.py evaluates them and fields/test_stand_in.py holds them to the upstream's own resolution. A clause holds when every key in it holds; the stand-in is exact when at least one clause holds. Facts: value (the recorded value as a string), tp_group_nodes (nodes the pool's tensor-parallel group spans), compute_capability (the part's, as major.minor). A clause that names a fact the consumer cannot supply does not hold.",
+ "fields": {
+  "VLLM_FLASHINFER_ALLREDUCE_BACKEND": {
+   "preserves": "the backend vLLM's _resolve_fi_ar_backend picks for the tensor-parallel group (flashinfer_all_reduce.py:143-178@5df63a72). One node: auto picks mnnvl with a trtllm fallback when the multicast workspace cannot be created, and a stated mnnvl picks mnnvl with no fallback, so the two differ only on a node without NVSwitch multicast. Several nodes: auto picks mnnvl without fallback on compute capability 10.0 and up, and turns FlashInfer all-reduce off below it.",
+   "valid_when": [
+    {"value_in": ["auto"]},
+    {"value_in": ["mnnvl"], "tp_group_nodes": {"eq": 1}},
+    {"value_in": ["mnnvl"], "tp_group_nodes": {"gt": 1}, "compute_capability": {"gte": "10.0"}}
+   ]
+  },
+  "UCX_RCACHE_MAX_UNRELEASED": {
+   "preserves": "the value vLLM sets itself when the environment does not state one (nixl_utils.py:20-36@5df63a72)",
+   "valid_when": [{"value_in": ["1024"]}]
+  },
+  "UCX_TLS": {
+   "preserves": "the NIC path the engine prices for a handoff between nodes when UCX_CUDA_IPC_ENABLE_MNNVL=y is not stated (compat/kernelmodel): a transport list that names an RDMA transport, or all, reaches the NIC; a deny list or a list with no RDMA transport does not. UCX FAQ for the list syntax; no vLLM function resolves it",
+   "valid_when": [
+    {"value_list_has_any": ["rc", "rc_x", "rc_v", "rc_verbs", "rc_mlx5", "dc", "dc_x", "dc_mlx5", "ib", "ud", "ud_x", "ud_verbs", "ud_mlx5", "all"],
+     "value_not_prefixed": ["^"]}
+   ]
+  }
+ }
+}

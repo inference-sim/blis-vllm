@@ -1334,7 +1334,18 @@
         "issue": "inference-sim/blis-vllm#62"
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset"
+      }
+    },
+    {
+      "name": "UCX_TLS",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#62"
+      },
+      "estimation": {
+        "rule": "leave_unset"
       }
     },
     {
@@ -2313,7 +2324,7 @@
         "issue": "inference-sim/blis-vllm#80"
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset"
       }
     },
     {
