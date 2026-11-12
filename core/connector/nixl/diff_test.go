@@ -38,6 +38,9 @@ type scenario struct {
 			Kind          string `json:"kind"`
 			SlidingWindow int    `json:"sliding_window"`
 		} `json:"kv_groups"`
+		// DisableHybridKVCacheManager promotes the windows to full attention before grouping
+		// (unify_hybrid_kv_cache_specs), which leaves one group.
+		DisableHybridKVCacheManager bool `json:"disable_hybrid_kv_cache_manager"`
 		// AsyncScheduling, PipelineParallelSize and UseV2ModelRunner put more than one batch in
 		// flight, as tier 3 states them: the engine is then core/engine's batch queue.
 		AsyncScheduling      bool `json:"async_scheduling"`
@@ -173,7 +176,7 @@ func run(t *testing.T, sc scenario) trace {
 		MaxNumSeqs: c.MaxNumSeqs, MaxNumBatchedTokens: c.MaxNumBatchedTokens, BlockSize: c.BlockSize,
 		NumBlocks: c.NumBlocks, MaxModelLen: c.MaxModelLen, LongPrefillTokenThreshold: c.LongPrefillTokenThreshold,
 		EnableChunkedPrefill: chunked, Policy: sched.Policy(c.SchedulingPolicy), EnablePrefixCaching: caching,
-		ReserveFullSequence: true, Watermark: c.Watermark, Spec: spec, KVGroups: kv.ResolveGroups(layers, false),
+		ReserveFullSequence: true, Watermark: c.Watermark, Spec: spec, KVGroups: kv.ResolveGroups(layers, c.DisableHybridKVCacheManager),
 		Async: c.AsyncScheduling, DecodeStagger: pp, UseV2ModelRunner: v2, MaxConcurrentBatches: queue,
 	})
 	if err != nil {
