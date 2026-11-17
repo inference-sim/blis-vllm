@@ -102,7 +102,7 @@ func TestALoadedAdapterNeedsNoLoadForItsRequest(t *testing.T) {
 		t.Fatal(err)
 	}
 	e := built.(*Engine)
-	if _, err := e.LoadAdapter("a"); err != nil {
+	if err := e.LoadAdapter("a"); err != nil {
 		t.Fatal(err)
 	}
 	if got := e.ResidentAdapterIDs(); len(got) != 1 || got[0] != "a" {
@@ -138,7 +138,7 @@ func TestALoadedAdapterNeedsNoLoadForItsRequest(t *testing.T) {
 	if got := loadsFor("b", 10); len(got) != 1 {
 		t.Errorf("an adapter nothing placed: loads %v, want one", got)
 	}
-	was, _, err := e.UnloadAdapter("a")
+	was, err := e.UnloadAdapter("a")
 	if err != nil || !was {
 		t.Fatalf("unload a: was %v, err %v", was, err)
 	}
@@ -147,7 +147,7 @@ func TestALoadedAdapterNeedsNoLoadForItsRequest(t *testing.T) {
 			t.Error("a is still resident after unloading it")
 		}
 	}
-	if was, _, _ := e.UnloadAdapter("never"); was {
+	if was, _ := e.UnloadAdapter("never"); was {
 		t.Error("unloading an adapter that was never loaded reported it was loaded")
 	}
 
@@ -155,7 +155,7 @@ func TestALoadedAdapterNeedsNoLoadForItsRequest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := plain.(*Engine).LoadAdapter("a"); err == nil {
+	if err := plain.(*Engine).LoadAdapter("a"); err == nil {
 		t.Error("an engine without LoRA accepted an adapter load")
 	}
 }

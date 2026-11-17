@@ -2,34 +2,32 @@
 
 package vllm
 
-import (
-	"fmt"
-
-	"github.com/inference-sim/blis-vllm/core/lora"
-)
+import "fmt"
 
 // LoadAdapter loads a LoRA adapter into the engine's worker, as vLLM's dynamic load does
 // (/v1/load_lora_adapter, with lora_name name; core/lora Cache.Load). A cluster component that
-// places adapters calls it; no request is involved. It returns what the worker's adapter cache did.
-// An engine without LoRA (max_loras unset) refuses it, as vLLM does without enable_lora.
-func (e *Engine) LoadAdapter(name string) ([]lora.Event, error) {
+// places adapters calls it; no request is involved. The adapter is resident afterwards
+// (ResidentAdapterIDs), evicting the oldest loaded adapter if the cache was full. An engine without
+// LoRA (max_loras unset) refuses it, as vLLM does without enable_lora.
+func (e *Engine) LoadAdapter(name string) error {
 	if e.adapterCache == nil {
-		return nil, fmt.Errorf("vllm: adapter %q: LoRA is not enabled (max_loras unset)", name)
+		return fmt.Errorf("vllm: adapter %q: LoRA is not enabled (max_loras unset)", name)
 	}
 	if name == "" {
-		return nil, fmt.Errorf("vllm: an adapter needs a name")
+		return fmt.Errorf("vllm: an adapter needs a name")
 	}
-	return e.adapterCache.Load(e.loraID(name))
+	_, err := e.adapterCache.Load(e.loraID(name))
+	return err
 }
 
 // UnloadAdapter unloads a LoRA adapter, as vLLM's dynamic unload does (/v1/unload_lora_adapter;
 // core/lora Cache.Unload). It reports whether the adapter was loaded.
-func (e *Engine) UnloadAdapter(name string) (bool, []lora.Event, error) {
+func (e *Engine) UnloadAdapter(name string) (bool, error) {
 	if e.adapterCache == nil {
-		return false, nil, fmt.Errorf("vllm: adapter %q: LoRA is not enabled (max_loras unset)", name)
+		return false, fmt.Errorf("vllm: adapter %q: LoRA is not enabled (max_loras unset)", name)
 	}
-	was, ev := e.adapterCache.Unload(e.loraID(name))
-	return was, ev, nil
+	was, _ := e.adapterCache.Unload(e.loraID(name))
+	return was, nil
 }
 
 // ResidentAdapterIDs is the adapters the worker's CPU cache holds, by name, oldest first: the
