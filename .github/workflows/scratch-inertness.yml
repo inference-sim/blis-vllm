@@ -1,0 +1,46 @@
+name: scratch-inertness
+on:
+  push:
+    branches: [scratch/inertness-diag]
+permissions:
+  contents: read
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        rep: [1, 2, 3, 4, 5, 6]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - id: env
+        uses: ./.github/actions/oracle-env
+      - name: host
+        run: |
+          echo "image: $ImageVersion"; lscpu | grep -E "Model name|Flags" | tr ' ' '\n' | grep -E "avx512_bf16|amx|avx512f|Model|name" | sort -u | head -20; nproc; free -g | head -2
+      - name: dump
+        env:
+          ORACLE_MODEL: ${{ github.workspace }}/oracle-model
+          ORACLE_MODEL_REVISION: 27dcfa74d334bc871f3234de431e71c6eeba5dd6
+          HF_HUB_OFFLINE: "1"
+          VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
+        run: |
+          python -I - <<'PY' 2>&1 | grep -E "^(DIAG|RUN)" 
+          import importlib.util, json, sys, os
+          spec = importlib.util.spec_from_file_location("inertness", "oracle/inertness.py")
+          h = importlib.util.module_from_spec(spec); sys.modules["inertness"] = h; spec.loader.exec_module(h)
+          root = os.path.realpath("vllm-source")
+          c = json.load(open("oracle/inertness/data_parallel_rpc_port.json"))
+          for run in c["runs"]:
+              if run["kind"] != "handshake":
+                  continue
+              out = h.RUNNERS["handshake"](root, run, 29550)
+              cfg = out["to_engine"]["config"]
+              print("RUN", run["id"], "digest", h.digest(out["to_engine"]), "started_with", h.digest(out["to_engine"]["started_with"]), "endpoints", h.digest(out["to_engine"]["endpoints"]), "config", h.digest(cfg))
+              for sec, d in cfg.items():
+                  print("RUN", run["id"], sec, h.digest(d))
+              if run["id"] == "launch":
+                  print("DIAG", json.dumps(cfg, sort_keys=True))
+                  print("DIAG", json.dumps(out["to_engine"]["started_with"], sort_keys=True, default=str))
+          PY
