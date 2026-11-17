@@ -483,6 +483,11 @@ func lower(in Input, eng vllmsettings.Settings, g *model.Graph, sp *model.Specul
 			"cudagraph_mode %q is not one this kernel prices; add it with its launch "+
 				"count rather than letting it fall through", eng.CUDAGraphMode)
 	}
+	launches, err := museLaunches(g, &c, lay, pl.PP, pl.EnableExpertParallel, record, in.Rules.EngineVersion(), note)
+	if err != nil {
+		return nil, err
+	}
+	p.Launches = launches
 	uniformDecodeWidth := 1 + spec
 
 	// The sequence cap and the capture ceiling (VllmConfig._set_cudagraph_sizes,
