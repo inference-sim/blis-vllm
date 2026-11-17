@@ -277,7 +277,7 @@ func offloadOf(m *kernelmodel.Model, o *deployment.Offload) (*yaml.Node, error) 
 			return nil, fmt.Errorf("offload.tiers[%d] (%q): the first tier is the OffloadingConnector's %s tier, and a "+
 				"tier below it is TieringOffloadingSpec's (%s)", i, t.Device, cpuTier, secondaryTierIssue)
 		}
-		tier, err := fsTierOf(m, i, t)
+		tier, err := deviceTierOf(m, i, t)
 		if err != nil {
 			return nil, err
 		}
@@ -294,10 +294,24 @@ func offloadOf(m *kernelmodel.Model, o *deployment.Offload) (*yaml.Node, error) 
 	bpc := 0
 	if opts != nil {
 		bpc = opts.BlocksPerChunk
-		*opts = engineconfig.ConnectorOptions{BlocksPerChunk: opts.BlocksPerChunk}
+		// A p2p tier sits on no device, so it is stated in the connector's own options, as vLLM states it
+		// (kv_connector_extra_config.secondary_tiers), and passed through unchanged; the engine builds it
+		// (core/vllm offloadtiers_p2p.go) and refuses what it cannot run.
+		for i, t := range opts.SecondaryTiers {
+			if t["type"] != "p2p" {
+				return nil, fmt.Errorf("offload.connector_options.secondary_tiers[%d]: %v is not a tier on no device: only "+
+					"p2p is stated here, and a tier on a catalog device is one of offload.tiers (%s)", i, t["type"], secondaryTierIssue)
+			}
+			if o.Spec != "TieringOffloadingSpec" {
+				return nil, fmt.Errorf("offload.connector_options.secondary_tiers[%d]: a p2p tier is TieringOffloadingSpec's, "+
+					"and the offload's spec is %q (%s)", i, o.Spec, secondaryTierIssue)
+			}
+			secondary = append(secondary, t)
+		}
+		*opts = engineconfig.ConnectorOptions{BlocksPerChunk: opts.BlocksPerChunk, SecondaryTiers: opts.SecondaryTiers}
 		if again, _ := engineconfig.DecodeConnectorOptions(o.ConnectorOptions); again != nil && !reflect.DeepEqual(*again, *opts) {
-			return nil, fmt.Errorf("offload.connector_options: only blocks_per_chunk is an OffloadingConnector option (%s)",
-				offloadIssue)
+			return nil, fmt.Errorf("offload.connector_options: only blocks_per_chunk and secondary_tiers are OffloadingConnector "+
+				"options (%s)", offloadIssue)
 		}
 	}
 	perBlock, err := offloadBytesPerBlock(m)
@@ -334,14 +348,27 @@ func offloadOf(m *kernelmodel.Model, o *deployment.Offload) (*yaml.Node, error) 
 	return &n, nil
 }
 
-// fsTierOf is a deployment's tier below the CPU tier as TieringOffloadingSpec's fs tier on that
-// catalog device (core/vllm offloadtiers.go), refused unless the kernel prices the device's moves
-// both ways (its offload_tier_<device>_* coefficients), as compat/build refuses an unpriced tier.
-// The deployment states no root_dir: the tier's files are under one named by the device, and which
-// engines share them is the simulator's (core/vllm.TierStorage). The tier's bytes are the device's
-// capacity, which vLLM's fs tier does not bound: it evicts nothing, and a block file is present
-// until something outside vLLM removes it (vllm/v1/kv_offload/tiering/fs/manager.py:86-104@4ba787ec).
-func fsTierOf(m *kernelmodel.Model, i int, t deployment.Tier) (map[string]any, error) {
+// objectStores are the catalog's storage classes that are object stores (catalog/devices/storage.yaml:
+// s3, "an object store reached over the network"), which vLLM reaches through its obj tier; every
+// other storage class is a file system, reached through its fs tier. compat/build names the same set.
+var objectStores = map[string]bool{"s3": true}
+
+// deviceTierOf is a deployment's tier below the CPU tier as one of TieringOffloadingSpec's tiers on
+// that catalog device (core/vllm offloadtiers.go), refused unless the kernel prices the device's
+// moves both ways (its offload_tier_<device>_* coefficients), as compat/build refuses an unpriced
+// tier. The tier's bytes are the device's capacity, which neither tier bounds: neither evicts, and a
+// block file or object is present until something outside vLLM removes it
+// (vllm/v1/kv_offload/tiering/fs/manager.py:86-104, obj/manager.py@4ba787ec).
+//
+// On a file system it is the fs tier. The deployment states no root_dir: the tier's files are under
+// one named by the device, and which engines share them is the simulator's (core/vllm.TierStorage).
+//
+// On an object store it is the obj tier (obj/manager.py:106-117@4ba787ec), in a bucket named by the
+// device, which the simulator shares between engines as it shares an fs tier's files
+// (core/vllm.TierBuckets). ObjStoreConfig requires an endpoint_override (obj/config.py:19); a
+// simulated bucket is reached at no address, so the engine is given the device's name as one, a
+// value no simulated outcome depends on.
+func deviceTierOf(m *kernelmodel.Model, i int, t deployment.Tier) (map[string]any, error) {
 	for _, toTier := range []bool{true, false} {
 		dir := kernel.DirectionFromTier
 		if toTier {
@@ -352,6 +379,10 @@ func fsTierOf(m *kernelmodel.Model, i int, t deployment.Tier) (map[string]any, e
 				"such device, or the coefficients carry no offload_tier_%s_* entries for the hardware (%s)", i, t.Device,
 				map[bool]string{true: "to", false: "from"}[toTier], t.Device, secondaryTierIssue)
 		}
+	}
+	if objectStores[t.Device] {
+		return map[string]any{"type": "obj", "device_class": t.Device,
+			"store_config": map[string]any{"bucket": t.Device, "endpoint_override": t.Device}}, nil
 	}
 	return map[string]any{"type": "fs", "root_dir": "/" + t.Device, "device_class": t.Device}, nil
 }
@@ -628,7 +659,11 @@ func (p pool) complete(given yaml.Node) yaml.Node {
 		// (vllm/config/vllm.py:644-664@5df63a72), which the catalog's model graph holds.
 		setIfAbsent(&block, "mtp_nextn_predict_layers", fmt.Sprint(n))
 	}
-	if role := kvRoleOf(p.role); role != "" && p.connector != "" {
+	// vLLM's P/D deployment over its p2p tier states the OffloadingConnector as its only KV connector
+	// (docs/features/kv_offloading_usage.md "P2P (Including P/D)" at vLLM v0.33.0): the engine runs it
+	// as kv_offload, whose p2p tier loads the decode's prompt, so the pool states no kv_transfer.
+	p2pHandoff := p.connector == offloadChild && p.offload != nil
+	if role := kvRoleOf(p.role); role != "" && p.connector != "" && !p2pHandoff {
 		// A P/D pool's kv_transfer_config: the deployment's pd_transfer.connector, and the pool's
 		// role as vLLM's kv_role (a prefill pool produces KV, a decode pool consumes it).
 		kt := yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
