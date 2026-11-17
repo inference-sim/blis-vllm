@@ -439,8 +439,8 @@
    "args": {
     "ctx": "c1",
     "keys": [
-     "1916a3fa8902fa9eba23441de030b624de85f3e829b38ed4d02b15831ea6888f00000000",
      "a2621334354fadfa3a05ed55fb8af730a0b7460a013b214f49552e1f436c312b00000000",
+     "1916a3fa8902fa9eba23441de030b624de85f3e829b38ed4d02b15831ea6888f00000000",
      "f816bd041daedc975813ac0ba47f0613a1bc5543d2f00ac7125b3ef50cd2d7f300000000"
     ],
     "req": "a",
@@ -1161,9 +1161,9 @@
    "args": {
     "ctx": "c3",
     "keys": [
-     "91fdb16e411daedf083e111ee293af2cc368b8a24f54dbbaa054c8eb662ba74100000000",
+     "6680ba0b1c9040c1b91509c479d22fdb27406ec4719bf392cd8c11652ce73f2200000000",
      "129388317c5a398cddfc2d04439f7419e70753eade039e609c6460e09c13bd0d00000000",
-     "6680ba0b1c9040c1b91509c479d22fdb27406ec4719bf392cd8c11652ce73f2200000000"
+     "91fdb16e411daedf083e111ee293af2cc368b8a24f54dbbaa054c8eb662ba74100000000"
     ],
     "req": "c"
    },
@@ -2031,23 +2031,6 @@
   },
   {
    "args": {
-    "key": "1916a3fa8902fa9eba23441de030b624de85f3e829b38ed4d02b15831ea6888f00000000"
-   },
-   "m": "get",
-   "ret": {
-    "id": 2,
-    "ref": -1
-   }
-  },
-  {
-   "args": {
-    "key": "1916a3fa8902fa9eba23441de030b624de85f3e829b38ed4d02b15831ea6888f00000000"
-   },
-   "m": "mark_evictable",
-   "ret": null
-  },
-  {
-   "args": {
     "key": "a2621334354fadfa3a05ed55fb8af730a0b7460a013b214f49552e1f436c312b00000000"
    },
    "m": "get",
@@ -2059,6 +2042,23 @@
   {
    "args": {
     "key": "a2621334354fadfa3a05ed55fb8af730a0b7460a013b214f49552e1f436c312b00000000"
+   },
+   "m": "mark_evictable",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "1916a3fa8902fa9eba23441de030b624de85f3e829b38ed4d02b15831ea6888f00000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 2,
+    "ref": -1
+   }
+  },
+  {
+   "args": {
+    "key": "1916a3fa8902fa9eba23441de030b624de85f3e829b38ed4d02b15831ea6888f00000000"
    },
    "m": "mark_evictable",
    "ret": null
@@ -2664,17 +2664,17 @@
   },
   {
    "args": {
-    "key": "91fdb16e411daedf083e111ee293af2cc368b8a24f54dbbaa054c8eb662ba74100000000"
+    "key": "6680ba0b1c9040c1b91509c479d22fdb27406ec4719bf392cd8c11652ce73f2200000000"
    },
    "m": "get",
    "ret": {
-    "id": 9,
+    "id": 7,
     "ref": 1
    }
   },
   {
    "args": {
-    "key": "91fdb16e411daedf083e111ee293af2cc368b8a24f54dbbaa054c8eb662ba74100000000"
+    "key": "6680ba0b1c9040c1b91509c479d22fdb27406ec4719bf392cd8c11652ce73f2200000000"
    },
    "m": "mark_evictable",
    "ret": null
@@ -2698,17 +2698,17 @@
   },
   {
    "args": {
-    "key": "6680ba0b1c9040c1b91509c479d22fdb27406ec4719bf392cd8c11652ce73f2200000000"
+    "key": "91fdb16e411daedf083e111ee293af2cc368b8a24f54dbbaa054c8eb662ba74100000000"
    },
    "m": "get",
    "ret": {
-    "id": 7,
+    "id": 9,
     "ref": 1
    }
   },
   {
    "args": {
-    "key": "6680ba0b1c9040c1b91509c479d22fdb27406ec4719bf392cd8c11652ce73f2200000000"
+    "key": "91fdb16e411daedf083e111ee293af2cc368b8a24f54dbbaa054c8eb662ba74100000000"
    },
    "m": "mark_evictable",
    "ret": null
@@ -2826,7 +2826,7 @@
   }
  ],
  "provenance": {
-  "blis_vllm_commit": "bfc8f6e1689177abdf325473717253b3d9204700",
+  "blis_vllm_commit": "16f12c1f1fc628541ac5f0dc6dc31bf8f794962f",
   "kind": "recorded",
   "lockfile_sha256": "b506453042a0cc429fbcc68423217b73f3facb3894490cd7178930b4760a260b",
   "mock_version": "gpu-mock/9+2ee0b3b47a9c",
