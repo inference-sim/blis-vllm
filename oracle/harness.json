@@ -12,7 +12,8 @@
     "core/connector/offloading/testdata/golden/",
     "core/connector/multi/testdata/golden/",
     "core/connector/offloading/testdata/golden-fid5/",
-    "core/metrics/testdata/golden/"
+    "core/metrics/testdata/golden/",
+    "core/vllm/testdata/golden-render/"
   ],
   "golden_files": [
     "core/kv/testdata/block_hashes.json"
