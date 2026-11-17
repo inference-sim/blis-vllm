@@ -1,0 +1,173 @@
+{
+ "name": "ofuzz-20045",
+ "seed": 20045,
+ "config": {
+  "max_num_seqs": 3,
+  "max_num_batched_tokens": 16,
+  "block_size": 2,
+  "num_blocks": 112,
+  "max_model_len": 128,
+  "long_prefill_token_threshold": 16,
+  "enable_prefix_caching": true,
+  "scheduling_policy": "priority",
+  "kv_page": {
+   "num_kv_heads": 1,
+   "head_size": 1024
+  },
+  "transfer": {
+   "load_delay": 3,
+   "store_delay": 1
+  },
+  "connector": {
+   "name": "OffloadingConnector",
+   "kv_role": "kv_both",
+   "extra_config": {
+    "cpu_bytes_to_use": 1769472,
+    "offload_prompt_only": false,
+    "blocks_per_chunk": 3
+   }
+  },
+  "kv_groups": [
+   {
+    "kind": "full"
+   },
+   {
+    "kind": "sliding_window",
+    "sliding_window": 7
+   },
+   {
+    "kind": "sliding_window",
+    "sliding_window": 2
+   }
+  ]
+ },
+ "requests": [
+  {
+   "id": "q00",
+   "arrival_step": 11,
+   "prompt": [
+    4010,
+    3395,
+    4969,
+    2328,
+    4783,
+    518,
+    4667,
+    1676,
+    2607,
+    4546,
+    25810,
+    32443,
+    37814,
+    16205,
+    41283,
+    19790,
+    43625,
+    1774,
+    33975,
+    11190,
+    36860,
+    18660,
+    27360,
+    16222,
+    14208,
+    40822,
+    32055,
+    8119,
+    18754,
+    43966,
+    35104,
+    21552,
+    30736,
+    48544,
+    38162,
+    25936,
+    31856,
+    37781,
+    43946,
+    22977,
+    10874,
+    35978,
+    7427,
+    24867,
+    39951,
+    41311,
+    11052,
+    19656,
+    30863,
+    5641,
+    5902,
+    34869,
+    46515,
+    36776,
+    12957,
+    45587,
+    31957
+   ],
+   "output": [
+    11803,
+    49487,
+    21254,
+    36461,
+    44396,
+    12753
+   ],
+   "priority": 0
+  },
+  {
+   "id": "q01",
+   "arrival_step": 20,
+   "prompt": [
+    4010,
+    3395,
+    4969,
+    2328,
+    4783,
+    518,
+    4667,
+    1676,
+    2607,
+    4546
+   ],
+   "output": [
+    42297,
+    1047,
+    41924,
+    13420,
+    13185
+   ],
+   "store_delay": 2,
+   "priority": 0
+  },
+  {
+   "id": "q02",
+   "arrival_step": 22,
+   "prompt": [
+    47872,
+    14753,
+    14460,
+    8206,
+    2784,
+    47526,
+    40466,
+    46944
+   ],
+   "output": [
+    8613,
+    5491,
+    33249,
+    36572,
+    19386,
+    38951,
+    31149,
+    4481,
+    36324,
+    48897,
+    39639,
+    44827
+   ],
+   "priority": 1
+  }
+ ],
+ "max_steps": 400
+}

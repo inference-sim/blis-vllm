@@ -1,0 +1,286 @@
+{
+ "name": "cfuzz-20656",
+ "seed": 20656,
+ "config": {
+  "max_num_seqs": 4,
+  "max_num_batched_tokens": 8,
+  "block_size": 4,
+  "num_blocks": 103,
+  "max_model_len": 64,
+  "long_prefill_token_threshold": 0,
+  "enable_prefix_caching": true,
+  "scheduling_policy": "fcfs",
+  "connector": {
+   "name": "NixlConnector",
+   "kv_role": "kv_producer",
+   "kv_load_failure_policy": "fail",
+   "extra_config": {
+    "kv_recompute_threshold": 0
+   }
+  },
+  "kv_groups": [
+   {
+    "kind": "full"
+   },
+   {
+    "kind": "sliding_window",
+    "sliding_window": 16
+   }
+  ],
+  "speculative": {
+   "method": "mtp",
+   "num_speculative_tokens": 3,
+   "draft": "ernie-mtp-4"
+  }
+ },
+ "requests": [
+  {
+   "id": "q00",
+   "arrival_step": 3,
+   "prompt": [
+    19380,
+    35309,
+    31876,
+    26900,
+    44408
+   ],
+   "priority": 0,
+   "remote_decode": true,
+   "max_tokens": 1,
+   "send_delay": 1,
+   "output": [
+    32129
+   ],
+   "accepted": [
+    1,
+    0,
+    1
+   ]
+  },
+  {
+   "id": "q01",
+   "arrival_step": 7,
+   "prompt": [
+    3334,
+    4695,
+    1658,
+    17598,
+    44098,
+    11061,
+    33684,
+    33218,
+    30757,
+    47019,
+    19140,
+    23455,
+    3381,
+    32524,
+    26945,
+    42875,
+    6089
+   ],
+   "priority": 0,
+   "remote_decode": true,
+   "max_tokens": 1,
+   "send_delay": 3,
+   "output": [
+    3586
+   ],
+   "accepted": [
+    1,
+    2,
+    3
+   ]
+  },
+  {
+   "id": "q02",
+   "arrival_step": 7,
+   "prompt": [
+    9498,
+    45114,
+    32461,
+    21689,
+    44099
+   ],
+   "priority": 0,
+   "remote_decode": true,
+   "max_tokens": 1,
+   "send_delay": 2,
+   "output": [
+    31351
+   ],
+   "accepted": [
+    2,
+    3,
+    3
+   ]
+  },
+  {
+   "id": "q03",
+   "arrival_step": 7,
+   "prompt": [
+    3334,
+    4695,
+    1658,
+    47721,
+    24776,
+    6147,
+    37290,
+    48774,
+    15935,
+    45425,
+    6427,
+    4814,
+    43888,
+    43309,
+    15294,
+    4364,
+    25599
+   ],
+   "priority": 0,
+   "output": [
+    567,
+    19543
+   ],
+   "accepted": [
+    2,
+    0,
+    3,
+    2
+   ]
+  },
+  {
+   "id": "q04",
+   "arrival_step": 3,
+   "prompt": [
+    32112,
+    49198,
+    29847,
+    29829,
+    45124,
+    26797,
+    33120,
+    36330,
+    49226,
+    6657,
+    32685,
+    32470,
+    38497,
+    49024,
+    22371,
+    10907,
+    9175,
+    32992,
+    2235,
+    19484,
+    27124,
+    49276,
+    20545,
+    13294
+   ],
+   "priority": 0,
+   "output": [
+    31711,
+    42670,
+    39076,
+    5,
+    21669,
+    19925,
+    25596,
+    21719,
+    8805,
+    37398,
+    38398,
+    40712
+   ],
+   "accepted": [
+    2,
+    0,
+    2,
+    1,
+    0,
+    2,
+    2,
+    2,
+    3,
+    1,
+    3,
+    2,
+    3,
+    2
+   ]
+  },
+  {
+   "id": "q05",
+   "arrival_step": 5,
+   "prompt": [
+    4383,
+    29332,
+    46691,
+    11485,
+    32178,
+    49554,
+    8954,
+    30802,
+    23660,
+    34239,
+    24442,
+    1480,
+    34864,
+    9432
+   ],
+   "priority": 0,
+   "remote_decode": true,
+   "max_tokens": 1,
+   "send_delay": 3,
+   "output": [
+    28708
+   ],
+   "accepted": [
+    0,
+    1,
+    0
+   ]
+  },
+  {
+   "id": "q06",
+   "arrival_step": 8,
+   "prompt": [
+    7364,
+    16762,
+    38567,
+    41680,
+    39090,
+    2885,
+    35273,
+    32881,
+    32642,
+    20837,
+    43136,
+    25703,
+    35225,
+    35731,
+    7336,
+    29722,
+    49389,
+    47396,
+    4564,
+    49004
+   ],
+   "priority": 0,
+   "remote_decode": true,
+   "max_tokens": 1,
+   "send_delay": 4,
+   "output": [
+    8381
+   ],
+   "abort_step": 8,
+   "accepted": [
+    0,
+    2,
+    3
+   ]
+  }
+ ],
+ "max_steps": 400
+}
