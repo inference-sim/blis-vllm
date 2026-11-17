@@ -29,6 +29,9 @@ import (
 // A model not listed is treated as text-only here: any value is accepted and nothing is
 // disclosed.
 var towerlessMultimodalConfigs = map[string]string{
+	"9781d0d5918127cc95a0a9f76040ea11c6dfd356e18a2db8ab1fdc2e2941dd42": "gemma-4-26b-a4b-it-fp8-dynamic",
+	"ed0c1eb3633de771906e9ba004a44cc5635bcc06ee2062077c3d2e88a50707d3": "gemma-4-26b-a4b-it",
+	"e967dd38bc5cfd38bd09a995a7bf4a754075df2b46aba68f7fbb5a791e6d8dd1": "gemma-4-31b-it",
 	"8be45ce0476004a3f529fd896115a4a2e800a129ad2d3ec05b16050f52e21879": "deepseek-v4.1-flash",
 	"bb8f01c42cb92a52ca72e65afb4d5bd8d11aef083cd210e8de25dfb904f23e9f": "glm-5.3-flash",
 	"41db2811023b40ba4c8f8bbba88bce7dff377af51ecd18b32469a2a07064ebaf": "glm-5.3-flash-nvfp4",
