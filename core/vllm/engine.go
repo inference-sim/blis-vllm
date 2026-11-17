@@ -96,6 +96,8 @@ type Engine struct {
 	// hashSeed is the deployment's PYTHONHASHSEED (nil: unset), the root of every request's
 	// block-hash chain.
 	hashSeed *string
+	// servesRender is whether the server answers the router's render calls (ServesRender).
+	servesRender bool
 	// aborted are the requests Finish aborted, or that finished, while a batch in flight scheduled
 	// them: their entries in reqs go once no batch in flight does.
 	aborted map[string]bool
@@ -117,6 +119,8 @@ type Engine struct {
 	async bool
 	// pp is pipeline_parallel_size: how many stages a batch runs through (StageTimes).
 	pp int
+	// kvCapacity is the KV cache size the engine core logs at start-up (KVCacheCapacity).
+	kvCapacity kv.Capacity
 	// idleWake is when the engine next polls after an empty schedule that left requests, 0
 	// when none is due.
 	idleWake engine.Time
@@ -160,6 +164,8 @@ type reqState struct {
 	// preemptions and emitted are what the finish record reports.
 	preemptions int
 	emitted     int
+	// lookup is the request's last admission lookup, which its batch reports once it runs.
+	lookup lookupInfo
 }
 
 // pendingBatch is one in-flight batch: the contract's ID and core/engine's batch.
@@ -198,7 +204,7 @@ func newEngine(st settings, pricer Pricer) (*Engine, error) {
 		s: s, pricer: pricer, reqs: map[string]*reqState{}, aborted: map[string]bool{},
 		metrics:  metrics.New(histogramBounds(st.sched.MaxModelLen)),
 		maxLoRAs: st.sched.MaxLoRAs, specTokens: st.sched.Spec.NumTokens, async: st.sched.Async,
-		pp: max(st.sched.DecodeStagger, 1), hashSeed: st.hashSeed,
+		pp: max(st.sched.DecodeStagger, 1), hashSeed: st.hashSeed, servesRender: st.servesRender, kvCapacity: st.kvCapacity,
 	}
 	if st.sched.Spec.NumTokens > 0 {
 		// A pool that speculates registers the spec_decode counters (SpecDecodingProm); one that
@@ -603,18 +609,22 @@ func (e *Engine) takeEmptyFinished() []engine.Finished {
 // batchOf is a scheduled batch in the contract's terms.
 func (e *Engine) batchOf(cb core.Batch) (engine.Batch, error) {
 	b := engine.Batch{}
+	e.noteLookups(cb)
 	for _, id := range cb.Out.Order {
 		r := e.s.Request(id)
 		n := cb.Out.Scheduled[id]
 		computed := r.NumComputed - n
 		sc := engine.Scheduled{ID: id, Tokens: n, Computed: computed, PromptLen: len(r.Prompt),
 			Drafts: len(cb.Out.SpecDecode[id])}
-		if hit, ok := cb.Out.PrefixHit[id]; ok {
-			sc.CachedTokens = hit
+		if st := e.reqs[id]; st != nil && st.lookup.set && !st.lookup.reported {
 			// A lookup vLLM's prefix-cache stats count: at the request's admission with no
 			// computed tokens, when prefix caching is on (record_prefix_cache_stats,
 			// vllm/v1/core/sched/scheduler.py:1508-1511 and kv_cache_manager.py:251-264@4ba787ec).
+			// A request that waited for an asynchronous load reports it in the batch that first
+			// runs it, with the tokens the KV offload tier supplied (OffloadCachedTokens).
+			sc.CachedTokens = st.lookup.cached
 			sc.PrefixLookup = e.prefixCaching()
+			st.lookup.reported = true
 		}
 		b.Reqs = append(b.Reqs, sc)
 	}
@@ -1084,6 +1094,16 @@ func (e *Engine) Snapshot() engine.State {
 		KVBlocksTotal: int64(pool.NumBlocks() - 1), KVBlocksUsed: int64(pool.NumBlocks() - 1 - pool.NumFree()),
 		KVBlockSize: e.s.BlockSize()}
 }
+
+// KVCacheCapacity is the KV cache size this engine core logs at start-up, "GPU KV cache size: N
+// tokens, Maximum concurrency for M tokens per request: Cx" (update_kv_cache_capacity,
+// vllm/v1/core/kv_cache_utils.py:1136-1154@4ba787ec). It is not the pool's blocks times the block
+// size (Snapshot): a request holds blocks in every KV cache group of a hybrid model, so the pool
+// holds that many requests' worth of max_model_len tokens, which the log prints. It is the zero
+// Capacity when the pool's size is not stated. It is not part of the engine contract: a simulator
+// reporting the pool's size as the engine does looks for it by type assertion on
+// interface{ KVCacheCapacity() kv.Capacity }.
+func (e *Engine) KVCacheCapacity() kv.Capacity { return e.kvCapacity }
 
 // EnableKVEvents turns on the engine's KV cache events (kv_events_config.enable_kv_cache_events),
 // which a simulator calls when a router indexes them: each completed batch then reports its

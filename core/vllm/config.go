@@ -19,6 +19,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 
 	"github.com/inference-sim/blis-vllm/core/engine"
+	"github.com/inference-sim/blis-vllm/core/kv"
 	"github.com/inference-sim/blis-vllm/core/placement"
 	"github.com/inference-sim/blis-vllm/core/sched"
 	"github.com/inference-sim/blis-vllm/rules/engineconfig"
@@ -183,6 +184,15 @@ type settings struct {
 	// request's block-hash chain (resolve_none_hash_seed, vllm/v1/core/kv_cache_utils.py:131-146
 	// @5df63a72). It changes the hashes a KV-event stream publishes, never which blocks hit.
 	hashSeed *string
+	// kvCapacity is the KV cache size the engine core logs at start-up (kv.KVCapacity), the
+	// pool's tokens at max_model_len.
+	kvCapacity kv.Capacity
+	// servesRender is whether the model server answers the router's render endpoints: the
+	// frontend's --enable-scale-out (Engine.EnableScaleOut), false by default. vLLM's
+	// register_scale_out_api_routers answers every render, derender and token-in/token-out route
+	// with HTTP 403 unless it is set or the server runs in a dedicated token-only mode, which
+	// this engine does not model (tokens_only stays refused).
+	servesRender bool
 }
 
 // dpSettings are a data-parallel group's settings.
@@ -392,6 +402,7 @@ func resolve(c Config) (settings, error) {
 	// loop state (an empty schedule occupies a slot, a full queue blocks on the oldest batch, and a
 	// blocked step schedules nothing until that batch completes; vllm/v1/engine/core.py:698-810@5df63a72).
 
+	s.servesRender = e.EnableScaleOut != nil && *e.EnableScaleOut
 	prefixCaching := e.EnablePrefixCaching == nil || *e.EnablePrefixCaching
 	if err := checkMambaCache(c, prefixCaching); err != nil {
 		return settings{}, err
@@ -407,6 +418,9 @@ func resolve(c Config) (settings, error) {
 		return settings{}, err
 	}
 	if err := checkKVLayersFit(c, blockSize, maxLen, queue*budget, spec.PrefillLookahead, method); err != nil {
+		return settings{}, err
+	}
+	if s.kvCapacity, err = kvCapacityOf(c, blockSize, maxLen, queue*budget, spec.PrefillLookahead, method); err != nil {
 		return settings{}, err
 	}
 	if err := checkChunkedPrefill(c, chunked, chunkedInput{prefixCaching: prefixCaching, maxModelLen: maxLen,
