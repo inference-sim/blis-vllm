@@ -14,6 +14,7 @@ package lower
 
 import (
 	"fmt"
+	"math"
 	"slices"
 
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
@@ -46,6 +47,11 @@ type MuseSparkLayout struct {
 	// the GPUs share NVLink multicast memory. It decides whether either MNNVL workspace can be
 	// built on capability family 10, and is read nowhere else.
 	Multicast bool
+}
+
+// IsMuseSpark reports whether g is a graph of an architecture MuseSpark1xModel builds.
+func IsMuseSpark(g *model.Graph) bool {
+	return g != nil && slices.Contains(MuseSparkArchitectures, g.Global.Architecture)
 }
 
 func atLeastOne(n int) int { return max(n, 1) }
@@ -258,8 +264,77 @@ func MuseSparkLayerLaunches(f MuseSparkFusions, tokens int, ep bool) []NodeLaunc
 // It refuses a graph whose architecture is not Muse Spark's, or whose layers lack a node the
 // fusions act on.
 func MuseSparkStepLaunchChange(g *model.Graph, l MuseSparkLayout, tokens int) (int, error) {
+	f, ep, layers, err := museSparkResolve(g, l)
+	if err != nil {
+		return 0, err
+	}
+	return museLayerChange(f, tokens, ep) * layers, nil
+}
+
+// LaunchRange is the change vLLM v0.33.0's Muse Spark fusions make to each layer's launches in a
+// step whose rank launches From to To tokens, both included.
+type LaunchRange struct {
+	From, To, PerLayer int
+}
+
+// MuseSparkLaunchUpTo is the last token count the last LaunchRange names: wider than any step.
+const MuseSparkLaunchUpTo = math.MaxInt32
+
+// MuseSparkLaunchRanges is MuseSparkLayerLaunches's change per layer as ranges of the step's
+// launched tokens, for graph g under layout l: the ranges are disjoint, ordered, cover 1 to
+// MuseSparkLaunchUpTo where a fusion changes a launch, and omit a step size at which the engine
+// launches what the graph counts (a change of zero). It refuses what MuseSparkStepLaunchChange
+// refuses.
+func MuseSparkLaunchRanges(g *model.Graph, l MuseSparkLayout) ([]LaunchRange, error) {
+	f, ep, _, err := museSparkResolve(g, l)
+	if err != nil {
+		return nil, err
+	}
+	// The change is constant between these step sizes: one token against more (the unfused
+	// gather's copy), and the bounds of the sharded unpooler and of the fused all-reduce.
+	starts := []int{1, 2}
+	if f.UnpoolerShardedMaxTokens > 0 {
+		starts = append(starts, f.UnpoolerShardedMinTokens, f.UnpoolerShardedMaxTokens+1)
+	}
+	if f.MoEFinalizeAllReduceMaxTokens > 0 {
+		starts = append(starts, f.MoEFinalizeAllReduceMaxTokens+1)
+	}
+	slices.Sort(starts)
+	starts = slices.Compact(starts)
+	var out []LaunchRange
+	for i, from := range starts {
+		to := MuseSparkLaunchUpTo
+		if i+1 < len(starts) {
+			to = starts[i+1] - 1
+		}
+		per := museLayerChange(f, from, ep)
+		if per == 0 {
+			continue
+		}
+		if n := len(out); n > 0 && out[n-1].PerLayer == per && out[n-1].To == from-1 {
+			out[n-1].To = to
+			continue
+		}
+		out = append(out, LaunchRange{From: from, To: to, PerLayer: per})
+	}
+	return out, nil
+}
+
+// museLayerChange is the launches one layer makes in a step of tokens beyond the graph's count.
+func museLayerChange(f MuseSparkFusions, tokens int, ep bool) int {
+	per := 0
+	for _, n := range MuseSparkLayerLaunches(f, tokens, ep) {
+		per += n.Engine - n.Graph
+	}
+	return per
+}
+
+// museSparkResolve checks that g is a Muse Spark graph with the nodes the fusions act on, and
+// resolves the fusions under l, whether the graph's moe_combine all-reduce is emitted (ep), and
+// how many layers the target's stack has.
+func museSparkResolve(g *model.Graph, l MuseSparkLayout) (f MuseSparkFusions, ep bool, layers int, err error) {
 	if g == nil || !slices.Contains(MuseSparkArchitectures, g.Global.Architecture) {
-		return 0, fmt.Errorf("lower: Muse Spark's fusions apply to %v graphs only", MuseSparkArchitectures)
+		return f, false, 0, fmt.Errorf("lower: Muse Spark's fusions apply to %v graphs only", MuseSparkArchitectures)
 	}
 	headDim := 0
 	byID := map[string]model.LayerKind{}
@@ -267,36 +342,30 @@ func MuseSparkStepLaunchChange(g *model.Graph, l MuseSparkLayout, tokens int) (i
 		byID[lk.ID] = lk
 		for _, role := range []string{museRoleInputNorm, museRoleQKNormRope, museRolePostExpertNorm, museRoleMoECombine} {
 			if !slices.ContainsFunc(lk.Nodes, func(n model.Node) bool { return n.Role == role }) {
-				return 0, fmt.Errorf("lower: layer kind %q has no %s node", lk.ID, role)
+				return f, false, 0, fmt.Errorf("lower: layer kind %q has no %s node", lk.ID, role)
 			}
 		}
 		for _, n := range lk.Nodes {
 			if n.Op == model.OpAttention {
 				if headDim != 0 && n.HeadDim != headDim {
-					return 0, fmt.Errorf("lower: layer kind %q has head size %d, another has %d", lk.ID, n.HeadDim, headDim)
+					return f, false, 0, fmt.Errorf("lower: layer kind %q has head size %d, another has %d", lk.ID, n.HeadDim, headDim)
 				}
 				headDim = n.HeadDim
 			}
 		}
 	}
 	if !slices.ContainsFunc(g.Head, func(n model.Node) bool { return n.Role == museRoleFinalNorm }) {
-		return 0, fmt.Errorf("lower: the head has no %s node, which the last layer's boundary feeds", museRoleFinalNorm)
+		return f, false, 0, fmt.Errorf("lower: the head has no %s node, which the last layer's boundary feeds", museRoleFinalNorm)
 	}
-	f, err := MuseSparkFusionsFor(headDim, l)
-	if err != nil {
-		return 0, err
+	if f, err = MuseSparkFusionsFor(headDim, l); err != nil {
+		return f, false, 0, err
 	}
-	ep := l.ExpertParallel && atLeastOne(l.TP) > 1 && atLeastOne(l.DP) == 1 && atLeastOne(l.PCP) == 1
-	per := 0
-	for _, n := range MuseSparkLayerLaunches(f, tokens, ep) {
-		per += n.Engine - n.Graph
-	}
-	layers := 0
+	ep = l.ExpertParallel && atLeastOne(l.TP) > 1 && atLeastOne(l.DP) == 1 && atLeastOne(l.PCP) == 1
 	for _, id := range g.Stack.Expand() {
 		if _, ok := byID[id]; !ok {
-			return 0, fmt.Errorf("lower: the stack names layer kind %q, which the graph does not declare", id)
+			return f, false, 0, fmt.Errorf("lower: the stack names layer kind %q, which the graph does not declare", id)
 		}
 		layers++
 	}
-	return per * layers, nil
+	return f, ep, layers, nil
 }

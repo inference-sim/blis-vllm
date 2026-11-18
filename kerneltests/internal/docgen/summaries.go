@@ -112,13 +112,6 @@ var summaries = map[string]struct{ title, summary string }{
 			"refuses such a deployment under its default KV cache manager, so this matters only " +
 			"with that manager turned off.",
 	},
-	"step.go|(*Kernel).priceLayers|Known over-charge": {
-		"Routed experts under tensor parallelism",
-		"Under tensor parallelism each rank is charged the arithmetic of whole routed experts, " +
-			"where vLLM gives it a tp-th slice of each. Correcting this makes the measured accuracy " +
-			"worse, because the over-charge offsets a cost not yet identified, so it is kept until " +
-			"that cost is found.",
-	},
 	"kernel.go|(*Kernel).moeDPFunnel|Coverage limit": {
 		"Expert tokens under prefill-context parallelism",
 		"The tokens reaching a rank's experts are multiplied by the data-parallel width, " +

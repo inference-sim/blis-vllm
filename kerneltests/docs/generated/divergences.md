@@ -221,23 +221,6 @@ A model whose graph states its KV caches -- DeepSeek-V4 and V4.1, MiniMax-M3 -- 
     vllm/models/deepseek\_v4/nvidia/model.py:1406-1424, deepseek\_v41/nvidia/model.py:
     885-910@v0.32.0).
 
-### Routed experts under tensor parallelism
-
-*Known over-charge, in `(*Kernel).priceLayers` in [`kernel/step.go`](https://github.com/inference-sim/blis-substrate/blob/main/kernel/step.go).*
-
-Under tensor parallelism each rank is charged the arithmetic of whole routed experts, where vLLM gives it a tp-th slice of each. Correcting this makes the measured accuracy worse, because the over-charge offsets a cost not yet identified, so it is kept until that cost is found.
-
-??? quote "The note in the source"
-    NOT divided by expertTensorShards, and that is a KNOWN over-charge rather
-    than an oversight. Under pure tensor parallelism localExpertShare is 1 --
-    every rank does hold every expert -- and vLLM shards the intermediate
-    dimension, \`intermediate\_size\_per\_partition = intermediate\_size // tp\_size\`
-    (vllm/model\_executor/layers/fused\_moe/config.py:1321-1323), so a rank's
-    routed work is its slice's. Charging the whole expert over-prices routed
-    compute by the tensor-parallel width on the 400 of 591 InferenceX scenarios
-    that are pure TP. The BYTES do divide by it (routedWeightBytes, below), so the
-    two terms disagree about the same experts.
-
 ### MXFP4 expert padding on other backends
 
 *Coverage limit, in `(*Kernel).expertPadding` in [`kernel/step_terms.go`](https://github.com/inference-sim/blis-substrate/blob/main/kernel/step_terms.go).*
@@ -257,4 +240,4 @@ The kernel pads the MXFP4 expert weights and work to the shapes the Marlin and T
     than 256, and the FlashInfer EP megakernel and b12x do not pad; this kernel does not know
     which backend the engine picked, and prices the Marlin and TRTLLM rule.
 
-*17 notes: 1 known divergence, 3 known over-charges, 13 coverage limits.*
+*16 notes: 1 known divergence, 2 known over-charges, 13 coverage limits.*
