@@ -308,3 +308,38 @@ func TestAMultiHostGroupFusesAllReduceOnBlackwellOnly(t *testing.T) {
 		t.Errorf("B200 tp 16: %d launches a layer at 4096 tokens, want -2", got)
 	}
 }
+
+// The compile passes run in vLLM_COMPILE mode whatever the CUDA-graph mode captures, so the fused
+// all-reduce and RMSNorm change to a layer's launches is stated alike under FULL, PIECEWISE,
+// FULL_AND_PIECEWISE, FULL_DECODE_ONLY and NONE (cudagraph_mode NONE with the model still compiled),
+// and the plan's graph policy says how each mode launches, so a PIECEWISE or eager pool is never
+// read as FULL: a count of kernels is not a count of host launches per graph replay. enforce_eager
+// compiles nothing and states none.
+func TestTheStatedLaunchesDoNotAssumeAFullGraph(t *testing.T) {
+	for _, c := range []struct {
+		mode         string
+		eager        bool
+		decode, rest plan.Launch
+		perLayer     int
+	}{
+		{"FULL", false, plan.LaunchGraph, plan.LaunchGraph, -2},
+		{"PIECEWISE", false, plan.LaunchPiecewise, plan.LaunchPiecewise, -2},
+		{"FULL_AND_PIECEWISE", false, plan.LaunchGraph, plan.LaunchPiecewise, -2},
+		{"FULL_DECODE_ONLY", false, plan.LaunchGraph, plan.LaunchEager, -2},
+		{"NONE", false, plan.LaunchEager, plan.LaunchEager, -2},
+		{"FULL", true, plan.LaunchEager, plan.LaunchEager, 0},
+	} {
+		name := c.mode
+		if c.eager {
+			name += " with enforce_eager"
+		}
+		l := lowerFor(t, "0.33.0", "llama-3.1-70b-instruct", "h200", "tp: 4, pp: 1, dp: 1", 4,
+			vllmsettings.Settings{MaxNumBatchedTokens: 8192, CUDAGraphMode: c.mode, EnforceEager: c.eager})
+		if l.Plan.Graphs.Decode != c.decode || l.Plan.Graphs.Other != c.rest {
+			t.Errorf("%s: graph policy decode %q other %q, want %q and %q", name, l.Plan.Graphs.Decode, l.Plan.Graphs.Other, c.decode, c.rest)
+		}
+		if got := l.Plan.LaunchChangeAt(64); got != c.perLayer {
+			t.Errorf("%s: %d launches a layer at 64 tokens, want %d", name, got, c.perLayer)
+		}
+	}
+}
