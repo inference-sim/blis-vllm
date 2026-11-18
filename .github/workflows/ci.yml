@@ -747,6 +747,13 @@ jobs:
         run: |
           catalog="$(go list -m -f '{{.Dir}}' github.com/inference-sim/blis-substrate)/catalog/models"
           BLIS_ORACLE_CATALOG="$catalog" python -I oracle/musefusion/oracle.py vllm-source check core/lower/testdata/muse_fusions.json
+      # The compile passes vLLM builds by default (the all-reduce and RMSNorm fusion among them), their
+      # token bounds and the models it compiles, from a real VllmConfig on this CPU with the GPU
+      # replaced (compat/lowering passes.go).
+      - name: the compile pass resolutions are vLLM's own
+        run: |
+          catalog="$(go list -m -f '{{.Dir}}' github.com/inference-sim/blis-substrate)/catalog/models"
+          BLIS_ORACLE_CATALOG="$catalog" python -I oracle/launchpasses/oracle.py vllm-source check compat/lowering/testdata/launch_passes.json
       - name: every replacement the lowering oracle makes is listed
         run: |
           python3 -I oracle/lower/check_replacements.py oracle/lower/extract.py oracle/lower/replacements.json

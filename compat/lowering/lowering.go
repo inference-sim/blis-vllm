@@ -683,6 +683,16 @@ func lower(in Input, eng vllmsettings.Settings, g *model.Graph, sp *model.Specul
 		}
 		note("max_num_batched_tokens", strconv.Itoa(defaultBatched), why)
 	}
+
+	// The compile passes' launches, over the token budget the engine resolved.
+	if p.Launches == nil {
+		fused, err := allReduceNormFusion(g, &c, lay, in, eng.EnforceEager, int(p.Batch.Tokens),
+			in.Rules.EngineVersion())
+		if err != nil {
+			return nil, err
+		}
+		p.Launches = fused
+	}
 	return out, nil
 }
 

@@ -26,35 +26,10 @@ func TestMuseSparkDecodeStepsAreCheaperByTheLaunchesItsFusedKernelsRemove(t *tes
 	editEngine(t, &in, func(e *engineconfig.Engine) { e.MaxNumSeqs = 512 })
 	fused := build(t, in)
 
-	eng, err := vllmsettings.OfPool(in.Deployment, in.PoolIndex)
-	if err != nil {
-		t.Fatal(err)
-	}
-	resolveMemoryUtilization(&eng, in.Scenario.EngineRelease())
-	low, err := lowering.Lower(lowering.Input{Scenario: in.Scenario, Deployment: in.Deployment,
-		PoolIndex: in.PoolIndex, Model: in.Model, Chip: in.Chip, Rules: in.Rules, Settings: eng})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(low.Plan.Launches) == 0 {
-		t.Fatal("the lowering states no change in Muse Spark's launches")
-	}
-	low.Plan.Launches = nil
-	in.Lowered = low
-	graph, err := New(in)
-	if err != nil {
-		t.Fatal(err)
-	}
+	graph := openWithoutLaunches(t, in)
 
-	decodes := func(n int) kernel.Batch {
-		b := kernel.Batch{DecodeThreshold: 1}
-		for range n {
-			b.Reqs = append(b.Reqs, kernel.ReqShape{Scheduled: 1, Computed: 4095, PromptLen: 4096})
-		}
-		return b
-	}
 	saved := func(n int) time.Duration {
-		return graph.StepTime(decodes(n)).NoOverlap - fused.StepTime(decodes(n)).NoOverlap
+		return graph.StepTime(launchDecodes(n)).NoOverlap - fused.StepTime(launchDecodes(n)).NoOverlap
 	}
 	three, two := saved(8), saved(200)
 	if three <= 0 || two <= 0 {
@@ -69,5 +44,65 @@ func TestMuseSparkDecodeStepsAreCheaperByTheLaunchesItsFusedKernelsRemove(t *tes
 	}
 	if !near(three*2, two*3) {
 		t.Errorf("saved %v at 8 decodes and %v at 200: want a ratio of 3 to 2", three, two)
+	}
+}
+
+func launchDecodes(n int) kernel.Batch {
+	b := kernel.Batch{DecodeThreshold: 1}
+	for range n {
+		b.Reqs = append(b.Reqs, kernel.ReqShape{Scheduled: 1, Computed: 4095, PromptLen: 4096})
+	}
+	return b
+}
+
+// openWithoutLaunches opens the pool of in as the lowering resolves it, less the statement of how
+// the engine's fused kernels change its launches: the graph's own count.
+func openWithoutLaunches(t *testing.T, in Inputs) *Kernel {
+	t.Helper()
+	eng, err := vllmsettings.OfPool(in.Deployment, in.PoolIndex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolveMemoryUtilization(&eng, in.Scenario.EngineRelease())
+	low, err := lowering.Lower(lowering.Input{Scenario: in.Scenario, Deployment: in.Deployment,
+		PoolIndex: in.PoolIndex, Model: in.Model, Chip: in.Chip, Rules: in.Rules, Settings: eng})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(low.Plan.Launches) == 0 {
+		t.Fatal("the lowering states no change in the pool's launches")
+	}
+	low.Plan.Launches = nil
+	in.Lowered = low
+	k, err := New(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return k
+}
+
+// SUB-6, SUB-11: vLLM v0.33.0 compiles MiniMax-M2.5 with FlashInfer's all-reduce and RMSNorm fusion
+// (compat/lowering TestTheLoweringStatesTheAllReduceNormFusion): at tensor parallelism 8 on an
+// H200 it serves steps of up to 85 tokens, two launches fewer a layer. Against the same pool lowered
+// without the statement, a FULL-graph decode step of 64 or 80 requests is cheaper, by the same
+// amount (two launches a layer at the per-launch term), and a step of 88 or 128, past the bound, costs
+// the same.
+func TestTheAllReduceNormFusionMakesStepsUpToItsBoundCheaper(t *testing.T) {
+	in := fixtureInputs(t, "minimax-m25-h200-tp8.yaml")
+	editEngine(t, &in, func(e *engineconfig.Engine) { e.MaxNumSeqs = 512 })
+	fused := build(t, in)
+	graph := openWithoutLaunches(t, in)
+	saved := func(n int) time.Duration {
+		return graph.StepTime(launchDecodes(n)).NoOverlap - fused.StepTime(launchDecodes(n)).NoOverlap
+	}
+	near := func(a, b time.Duration) bool { return a-b < 3*time.Nanosecond && b-a < 3*time.Nanosecond }
+	at64, at80 := saved(64), saved(80)
+	if at64 <= 0 || !near(at64, at80) {
+		t.Errorf("64 decodes save %v and 80 save %v: want the same, positive amount", at64, at80)
+	}
+	for _, n := range []int{88, 128} {
+		if got := saved(n); got != 0 {
+			t.Errorf("%d decodes save %v: past the 85-token bound the graph's launches stand", n, got)
+		}
 	}
 }
