@@ -700,7 +700,7 @@ func (s *Scheduler) lookupComplete(st *reqState) (int, bool) {
 // request another connector of a MultiConnector loads
 // (vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py:1351-1363@4ba787ec).
 func (s *Scheduler) AfterAlloc(r *sched.Request, blocks sched.AllocatedBlocks, external int) {
-	blocks.Groups = selected(s.cfg, blocks.Groups)
+	// All groups can claim a GPU block that a pending CPU store still reads.
 	for _, gb := range blocks.Groups {
 		for _, id := range gb {
 			if id != 0 {
@@ -711,6 +711,7 @@ func (s *Scheduler) AfterAlloc(r *sched.Request, blocks sched.AllocatedBlocks, e
 	if external == 0 {
 		return
 	}
+	blocks.Groups = selected(s.cfg, blocks.Groups)
 	st := s.reqs[r.ID]
 	st.loadRanges = st.loadRanges[:0]
 	local := st.localHit
