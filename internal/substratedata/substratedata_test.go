@@ -15,6 +15,10 @@ import (
 func TestTheRootsAreThePinnedSubstratesData(t *testing.T) {
 	t.Setenv(catalogEnv, "")
 	t.Setenv(registryEnv, "")
+	pinned, err := goOutput("", "list", "-m", "-f", "{{.Dir}}", Module)
+	if err != nil || pinned == "" {
+		t.Fatalf("resolve pinned substrate: directory %q, error %v", pinned, err)
+	}
 	for _, c := range []struct {
 		name  string
 		get   func() (string, error)
@@ -27,8 +31,8 @@ func TestTheRootsAreThePinnedSubstratesData(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !strings.Contains(got, Module+"@") || filepath.Base(got) != c.name {
-			t.Errorf("%s root %q is not <module cache>/%s@<version>/%s", c.name, got, Module, c.name)
+		if want := filepath.Join(pinned, c.name); got != want {
+			t.Errorf("%s root %q is not the pinned module's directory %q", c.name, got, want)
 		}
 		if _, err := os.Stat(filepath.Join(got, c.probe)); err != nil {
 			t.Errorf("%s root %q lacks %s: %v", c.name, got, c.probe, err)
@@ -40,10 +44,14 @@ func TestTheRootsAreThePinnedSubstratesData(t *testing.T) {
 func TestEachRootIsIndependentlyOverridable(t *testing.T) {
 	t.Setenv(catalogEnv, "/elsewhere/catalog")
 	t.Setenv(registryEnv, "")
+	pinned, err := goOutput("", "list", "-m", "-f", "{{.Dir}}", Module)
+	if err != nil || pinned == "" {
+		t.Fatalf("resolve pinned substrate: directory %q, error %v", pinned, err)
+	}
 	if got, _ := Catalog(); got != "/elsewhere/catalog" {
 		t.Errorf("Catalog() = %q with %s set", got, catalogEnv)
 	}
-	if got, _ := Registry(); !strings.Contains(got, Module+"@") {
+	if got, err := Registry(); err != nil || got != filepath.Join(pinned, "registry") {
 		t.Errorf("Registry() = %q moved when only %s was set", got, catalogEnv)
 	}
 }

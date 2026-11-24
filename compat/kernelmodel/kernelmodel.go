@@ -239,11 +239,12 @@ type identity struct {
 	// The pool's extent in the cluster, which places its instances. A deployment's pools fill
 	// the cluster's nodes exactly (blis-schemas' placement contract); BLIS places them in
 	// declaration order, so pool i occupies the nodes after pools 0..i-1.
-	role        deployment.Role
-	firstNode   int
-	poolNodes   int
-	gpusPerNode int
-	gpusPerRack int
+	role          deployment.Role
+	firstNode     int
+	poolNodes     int
+	gpusPerNode   int
+	gpusPerRack   int
+	gpuPlacements []deployment.GPUPlacement
 	// rackHandoff is whether a KV handoff between two nodes of one NVLink rack runs over NVLink.
 	// NIXL moves KV over multi-node NVLink only when UCX_CUDA_IPC_ENABLE_MNNVL=y and the KV cache is
 	// registered as VMM; otherwise it can only use RDMA or TCP across nodes
@@ -297,6 +298,7 @@ func identityOf(in latencykernel.Inputs, engine engineconfig.Engine, pk scenario
 		gpusPerRack:     pk.GPUsPerRack,
 		rackHandoff:     engine.Env[envMNNVL] == "y",
 		packaging:       pk,
+		gpuPlacements:   append([]deployment.GPUPlacement(nil), pool.GPUPlacements...),
 		rankGPUs:        max(1, pl.PP) * max(1, pl.TP) * max(1, pl.PCP),
 		tpRanks:         max(1, pl.TP),
 		latentKV:        allLatent(in.Model),
@@ -628,6 +630,9 @@ func (m *Model) UsesMLA() bool {
 // GPUs divided by the GPUs one rank occupies. A simulator running one replica per rank may run
 // at most this many in the pool.
 func (m *Model) RankCapacity() int {
+	if len(m.id.gpuPlacements) > 0 {
+		return len(m.id.gpuPlacements) / m.id.rankGPUs
+	}
 	return m.id.poolNodes * m.id.gpusPerNode / m.id.rankGPUs
 }
 
@@ -648,7 +653,9 @@ func (m *Model) PlacementOf(rank int) kernel.Placement { return m.placementAt(ra
 // placementAt places the pool's n-th unit of width GPUs, the units packed onto the nodes in order.
 func (m *Model) placementAt(n, width int) kernel.Placement {
 	node := m.id.firstNode
-	if m.id.gpusPerNode > 0 {
+	if len(m.id.gpuPlacements) > 0 {
+		node = m.id.gpuPlacements[n*width].Node
+	} else if m.id.gpusPerNode > 0 {
 		node += n * width / m.id.gpusPerNode
 	}
 	return kernel.Placement{Node: node, Rack: m.handoffRack(node), Pool: m.id.role}
@@ -727,12 +734,18 @@ func (m *Model) GroupLayoutError() error { _, _, err := m.groupLayout(); return 
 // runs a group as one instance may run at most this many in the pool (RankCapacity counts ranks, for a host that
 // runs one instance for each).
 func (m *Model) GroupCapacity() int {
+	if len(m.id.gpuPlacements) > 0 {
+		return len(m.id.gpuPlacements) / m.GroupGPUs()
+	}
 	return groupCapacityOf(m.id.poolNodes, m.GroupGPUs(), m.id.gpusPerNode)
 }
 
 // GroupPlacementOf places the pool's g-th group on the node holding its first GPU (groupLayout): the groups that
 // fit in a node fill it before the next, and a wider group starts at a whole node.
 func (m *Model) GroupPlacementOf(g int) kernel.Placement {
+	if len(m.id.gpuPlacements) > 0 {
+		return m.placementAt(g, m.GroupGPUs())
+	}
 	node := m.id.firstNode + groupNodeOf(g, m.GroupGPUs(), m.id.gpusPerNode)
 	return kernel.Placement{Node: node, Rack: m.handoffRack(node), Pool: m.id.role}
 }
@@ -741,6 +754,9 @@ func (m *Model) GroupPlacementOf(g int) kernel.Placement {
 // rack of the pool's g-th group, how many nodes the group spans, and whether the rack was declared.
 func (m *Model) EndpointGroupPlacement(g int) (kernel.Placement, int, bool) {
 	p := m.GroupPlacementOf(g)
+	if len(m.id.gpuPlacements) > 0 {
+		return p, 1, m.id.gpusPerRack > 0
+	}
 	if m.id.gpusPerNode <= 0 {
 		return p, 0, m.id.gpusPerRack > 0
 	}
@@ -773,6 +789,24 @@ func (m *Model) enginePlacement(at kernel.Placement) placement.Placement {
 	p := placement.Placement{Hardware: m.id.hardware, Fabric: m.id.fabric, Tensor: m.id.tpRanks,
 		Pipeline: m.PipelineStages(), Data: r.DataParallel(), Expert: r.ExpertParallel(),
 		RanksPerNode: m.id.gpusPerNode, Nodes: m.id.poolNodes}
+	if len(m.id.gpuPlacements) > 0 {
+		seen := make(map[int]bool)
+		for _, device := range m.id.gpuPlacements {
+			if seen[device.Node] {
+				continue
+			}
+			seen[device.Node] = true
+			if device.Node == at.Node {
+				p.Node = len(p.NodeRacks)
+			}
+			rack := device.Node
+			if m.id.gpusPerRack > 0 && m.id.gpusPerNode > 0 {
+				rack = device.Node * m.id.gpusPerNode / m.id.gpusPerRack
+			}
+			p.NodeRacks = append(p.NodeRacks, rack)
+		}
+		return p
+	}
 	for n := 0; n < m.id.poolNodes; n++ {
 		rack := m.id.firstNode + n
 		if m.id.gpusPerRack > 0 && m.id.gpusPerNode > 0 {
@@ -790,6 +824,9 @@ func (m *Model) enginePlacement(at kernel.Placement) placement.Placement {
 // rankGPUs <= gpusPerNode, so check both ends of its GPU allocation.
 func (m *Model) EndpointPlacement(rank int) (kernel.Placement, int, bool) {
 	p := m.PlacementOf(rank)
+	if len(m.id.gpuPlacements) > 0 {
+		return p, 1, m.id.gpusPerRack > 0
+	}
 	firstGPU := rank * m.id.rankGPUs
 	lastGPU := firstGPU + m.id.rankGPUs - 1
 	if m.id.gpusPerNode <= 0 {

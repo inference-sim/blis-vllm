@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
+	"github.com/inference-sim/blis-vllm/core/placement"
 	"pgregory.net/rapid"
 )
 
@@ -19,6 +20,43 @@ import (
 //   - ranks are packed: two ranks on one node never need more GPUs than the node has.
 //
 // And of pricing a handoff between them: moving more KV never costs less.
+func TestExplicitPlacementSharesNodeWithoutSharingGPUCapacity(t *testing.T) {
+	prefill, decode := pdFixtureWithFabric(t, "roce-200g")
+	for index, model := range []*Model{prefill, decode} {
+		model.id.poolNodes = 1
+		model.id.gpusPerNode = 2 * model.id.rankGPUs
+		model.id.gpuPlacements = make([]deployment.GPUPlacement, model.id.rankGPUs)
+		for gpu := range model.id.gpuPlacements {
+			model.id.gpuPlacements[gpu] = deployment.GPUPlacement{Node: 0, GPU: index*model.id.rankGPUs + gpu}
+		}
+		if model.RankCapacity() != 1 {
+			t.Fatalf("explicit allocation must expose exactly one engine, got %d", model.RankCapacity())
+		}
+		if model.GroupCapacity() != 1 {
+			t.Fatalf("explicit allocation must expose exactly one group, got %d", model.GroupCapacity())
+		}
+		placed, nodes, _ := model.EndpointPlacement(0)
+		if placed.Node != 0 || nodes != 1 {
+			t.Fatalf("explicit engine must occupy physical node 0, got %+v spanning %d", placed, nodes)
+		}
+		group, groupNodes, _ := model.EndpointGroupPlacement(0)
+		if group != placed || groupNodes != 1 {
+			t.Fatalf("explicit group must agree with rank placement, got %+v spanning %d", group, groupNodes)
+		}
+		for _, engine := range []placement.Placement{model.EnginePlacementOf(0), model.EngineGroupPlacementOf(0)} {
+			if engine.Node != 0 || engine.Nodes != 1 || len(engine.NodeRacks) != 1 || engine.NodeRacks[0] != 0 {
+				t.Fatalf("explicit engine must map physical node 0 to pool node 0, got %+v", engine)
+			}
+		}
+	}
+	from, same := prefill.PlacementOf(0), decode.PlacementOf(0)
+	remote := same
+	remote.Node, remote.Rack = 1, 1
+	if localCost, remoteCost := prefill.PDTransferTicks(4096, from, same), prefill.PDTransferTicks(4096, from, remote); localCost >= remoteCost {
+		t.Fatalf("same-node transfer should use NVLink, got %d ticks versus %d over RoCE", localCost, remoteCost)
+	}
+}
+
 func TestPlacementAndHandoffLaws(t *testing.T) {
 	r := repos()
 	r.Scenarios = "../../testdata/scenarios"
